@@ -137,6 +137,9 @@ void D3DApplication::InitDirect3D()
 	CreateSwapChain();
 	//新建描述符表
 	CreateRtvAndDsvDescriptorHeaps();
+
+	//
+	OnResize();
 }
 
 void D3DApplication::LogAdapters()
