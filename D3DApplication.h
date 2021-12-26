@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <wrl.h>
 #if defined(DEBUG) || defined(_DEBUG)
 #define _CRTDBG_MAP_ALLOC
@@ -21,6 +21,7 @@ public:
 	virtual void InitInstance(HINSTANCE InInstance, HWND inHWND);
 	virtual void InitDirect3D();
 	virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+	virtual void Draw();
 protected:
 	void CreateCommandObjects();
 	void CreateSwapChain();
@@ -29,6 +30,7 @@ protected:
 	virtual void CreateRtvAndDsvDescriptorHeaps();
 	D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView()const;
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()const;
+	ID3D12Resource* CurrentBackBuffer()const;
 public:
 	static D3DApplication* Get();
 private:
@@ -65,11 +67,15 @@ private:
 	int mClientHeight = 400;
 
 	DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-
+	DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 	// GPU 与cpu 交互
 	ComPtr<struct ID3D12Fence> mFence;
 	UINT64 mCurrentFence = 0;
 	ComPtr<IDXGISwapChain> mSpwapChain;
 	ComPtr<ID3D12Resource> mSwapChainBuffer[SwapChainBufferCount];
 	ComPtr<ID3D12Resource> mDepthStencilBuffer;
+
+	//设置屏幕
+	D3D12_VIEWPORT mScreenViewport;
+	D3D12_RECT mScissorRect;
 };

@@ -1,7 +1,8 @@
-﻿#include "D3DApplication.h"
+#include "D3DApplication.h"
 #include <string>
 #include <vector>
-
+#include <DirectXColors.h>
+using namespace DirectX;
 void Wchar_tToString(std::string& szDst, wchar_t* wchar)
 {
 	wchar_t* wText = wchar;
@@ -30,6 +31,34 @@ D3DApplication::~D3DApplication()
 LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+void D3DApplication::Draw()
+{
+	mD3DCommandAllocator->Reset();
+	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
+	auto TmpCurrentBackBuffer = CurrentBackBuffer();
+	auto TmpCurrentBackBufferView = CurrentBackBufferView();
+	auto TmpDepthStencilView = DepthStencilView(); 
+	CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	mD3DCommandList->ResourceBarrier(1, &barrier);
+	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
+	mD3DCommandList->RSSetScissorRects(1, &mScissorRect);
+	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, Colors::Red, 0, nullptr);
+	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
+	CD3DX12_RESOURCE_BARRIER bakbarrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	mD3DCommandList->ResourceBarrier(1, &bakbarrier);
+	mD3DCommandList->Close();
+
+	ID3D12CommandList* cmdLists[] = { mD3DCommandList.Get() };
+	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);
+
+	mSpwapChain->Present(0, 0);
+	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+	FlushCommandQueue();
 }
 
 D3DApplication* D3DApplication::Get()
@@ -108,6 +137,9 @@ void D3DApplication::InitDirect3D()
 	CreateSwapChain();
 	//新建描述符表
 	CreateRtvAndDsvDescriptorHeaps();
+
+	//
+	OnResize();
 }
 
 void D3DApplication::LogAdapters()
@@ -246,7 +278,7 @@ void D3DApplication::OnResize()
 	{
 		mSwapChainBuffer[i].Reset();
 	}
-	//Goto: depthstencilBuffer
+	mDepthStencilBuffer.Reset();
 	
 	mSpwapChain->ResizeBuffers(
 		SwapChainBufferCount,
@@ -265,7 +297,58 @@ void D3DApplication::OnResize()
 		rtvHeapHandle.Offset(1, mRtvDescriptorSize);
 	}
 
+	// 创建深度/模板缓冲区描述符
+	D3D12_RESOURCE_DESC depthStencilDesc;
+	depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	depthStencilDesc.Alignment = 0;
+	depthStencilDesc.Width = mClientWidth;
+	depthStencilDesc.Height = mClientHeight;
+	depthStencilDesc.DepthOrArraySize = 1;
+	depthStencilDesc.MipLevels = 1;
+	depthStencilDesc.Format = mDepthStencilFormat;
+	depthStencilDesc.SampleDesc.Count = b4xMassState ? 4 : 1;
+	depthStencilDesc.SampleDesc.Quality = b4xMassState ? (m4xMsaaQulity - 1) : 0;
+	depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
+	D3D12_CLEAR_VALUE optClear;
+	optClear.Format = mDepthStencilFormat;
+	optClear.DepthStencil.Depth = 1.0f;
+	optClear.DepthStencil.Stencil = 0;
+	CD3DX12_HEAP_PROPERTIES DSHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	mD3DDevice->CreateCommittedResource(
+		&DSHeap,
+		D3D12_HEAP_FLAG_NONE,
+		&depthStencilDesc,
+		D3D12_RESOURCE_STATE_COMMON,
+		&optClear,
+		IID_PPV_ARGS(mDepthStencilBuffer.GetAddressOf()));
+
+	// Create descriptor to mip level 0 of entire resource using the format of the resource.
+	mD3DDevice->CreateDepthStencilView(mDepthStencilBuffer.Get(), nullptr, DepthStencilView());
+
+	// Transition the resource from its initial state to be used as a depth buffer.
+	CD3DX12_RESOURCE_BARRIER ResBarrier = CD3DX12_RESOURCE_BARRIER::Transition(mDepthStencilBuffer.Get(),
+		D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	mD3DCommandList->ResourceBarrier(1, &ResBarrier);
+
+	// Execute the resize commands.
+	mD3DCommandList->Close();
+	ID3D12CommandList* cmdsLists[] = { mD3DCommandList.Get() };
+	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+	// Wait until resize is complete.
+	FlushCommandQueue();
+
+	// Update the viewport transform to cover the client area.
+	mScreenViewport.TopLeftX = 0;
+	mScreenViewport.TopLeftY = 0;
+	mScreenViewport.Width = static_cast<float>(mClientWidth);
+	mScreenViewport.Height = static_cast<float>(mClientHeight);
+	mScreenViewport.MinDepth = 0.0f;
+	mScreenViewport.MaxDepth = 1.0f;
+
+	mScissorRect = { 0, 0, mClientWidth, mClientHeight };
 }
 
 void D3DApplication::FlushCommandQueue()
@@ -317,4 +400,9 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3DApplication::CurrentBackBufferView() const
 D3D12_CPU_DESCRIPTOR_HANDLE D3DApplication::DepthStencilView() const
 {
 	return mDsvHeap->GetCPUDescriptorHandleForHeapStart();
+}
+
+ID3D12Resource* D3DApplication::CurrentBackBuffer() const
+{
+	return mSwapChainBuffer[mCurrBackBuffer].Get();
 }

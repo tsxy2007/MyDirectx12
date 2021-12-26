@@ -51,10 +51,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Main message loop:
     while (GetMessage(&msg, nullptr, 0, 0))
     {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
+        if (PeekMessage(&msg,0,0,0,PM_REMOVE))
+		{
             TranslateMessage(&msg);
             DispatchMessage(&msg);
+        }
+        else
+        {
+            D3DApplication::Get()->Draw();
         }
     }
 
