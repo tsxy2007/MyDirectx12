@@ -1,4 +1,4 @@
-#include "D3DApplication.h"
+﻿#include "D3DApplication.h"
 #include <string>
 #include <vector>
 #include <DirectXColors.h>
@@ -40,15 +40,15 @@ void D3DApplication::Draw()
 	auto TmpCurrentBackBuffer = CurrentBackBuffer();
 	auto TmpCurrentBackBufferView = CurrentBackBufferView();
 	auto TmpDepthStencilView = DepthStencilView(); 
-	CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
-		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET); 
 	mD3DCommandList->ResourceBarrier(1, &barrier);
 	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
 	mD3DCommandList->RSSetScissorRects(1, &mScissorRect);
 	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, Colors::Red, 0, nullptr);
 	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
-	CD3DX12_RESOURCE_BARRIER bakbarrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+	auto bakbarrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	mD3DCommandList->ResourceBarrier(1, &bakbarrier);
 	mD3DCommandList->Close();
@@ -131,7 +131,7 @@ void D3DApplication::InitDirect3D()
 	LogAdapters();
 #endif
 
-	//新建命令相关
+	//新建命令
 	CreateCommandObjects();
 	//新建交换缓冲区
 	CreateSwapChain();
@@ -272,7 +272,6 @@ void D3DApplication::OnResize()
 	assert(mSpwapChain);
 	assert(mD3DCommandAllocator);
 
-	FlushCommandQueue();
 
 	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
 
@@ -356,7 +355,7 @@ void D3DApplication::OnResize()
 void D3DApplication::FlushCommandQueue()
 {
 	mCurrentFence++;
-	mD3DCommandQueue->Signal(mFence.Get(), mCurrentFence);
+	mD3DCommandQueue->Signal(mFence.Get(), mCurrentFence); // GPU设置当前Fence值
 	if (mFence->GetCompletedValue() < mCurrentFence)
 	{
 		HANDLE eventHandle = CreateEventEx(nullptr, L"false", false, EVENT_ALL_ACCESS);
