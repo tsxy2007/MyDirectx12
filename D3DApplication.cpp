@@ -242,26 +242,28 @@ void D3DApplication::CreateSwapChain()
 {
 	mSpwapChain.Reset();
 	DXGI_SWAP_CHAIN_DESC sd;
-	sd.BufferDesc.Width = mClientWidth;
-	sd.BufferDesc.Height = mClientHeight;
-	sd.BufferDesc.RefreshRate.Numerator = 60;
+	// bufferDesc 这个结构体描述了带创建后台缓冲区的属性。
+	sd.BufferDesc.Width = mClientWidth; // 缓冲区分辨率的宽度
+	sd.BufferDesc.Height = mClientHeight; //缓冲区分辨率的高度
+	sd.BufferDesc.RefreshRate.Numerator = 60; // 刷新频率
 	sd.BufferDesc.RefreshRate.Denominator = 1;
-	sd.BufferDesc.Format = mBackBufferFormat;
-	sd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
-	sd.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
-	sd.SampleDesc.Count = b4xMassState ? 4 : 1;
+	sd.BufferDesc.Format = mBackBufferFormat; // 缓冲区的显示格式
+	sd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED; // 逐行扫描 vs 隔行扫描
+	sd.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED; // 图像如何相对于屏幕进行拉伸
+	// SampleDesc 多重采样的质量级别以及对每个像素的采样次数。
+	sd.SampleDesc.Count = b4xMassState ? 4 : 1; 
 	sd.SampleDesc.Quality = b4xMassState ? (m4xMsaaQulity - 1) : 0;
-	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	sd.BufferCount = SwapChainBufferCount;
-	sd.OutputWindow = mHWND;
-	sd.Windowed = true;
+	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; // 由于我们要将数据渲染至后台缓冲区，因此指定为DXGI_USAGE_RENDER_TARGET_OUTPUT
+	sd.BufferCount = SwapChainBufferCount;//交换链中所用缓冲区数量。
+	sd.OutputWindow = mHWND;// 渲染窗口的句柄
+	sd.Windowed = true;//指定为true，程序将在窗口模式下运行，指定为false 则采用全屏。
 	sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-	sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+	sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;//可选标记。如果指定为DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH，那么当程序切换为全屏的模式时，将采用当前桌面的显示模式
 
 	mD3DFactory->CreateSwapChain(
-		mD3DCommandQueue.Get(), 
-		&sd, 
-		mSpwapChain.GetAddressOf());
+		mD3DCommandQueue.Get(), // 指向ID3D12CommandQueue接口的指针。
+		&sd, // 指向描述符交换链的结构体指针。
+		mSpwapChain.GetAddressOf());//返回所创建的交换链接口。
 }
 
 void D3DApplication::OnResize()
