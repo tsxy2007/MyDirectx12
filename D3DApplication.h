@@ -5,11 +5,16 @@
 #include <crtdbg.h>
 #endif
 
-#include <dxgi1_6.h>
-#include "d3dx12.h"
-#include <dxgi1_4.h>
-#include <d3d12.h>
-#include <assert.h>
+#include "d3dUtil.h"
+#include "UploadBuffer.h"
+
+using Microsoft::WRL::ComPtr;
+using namespace DirectX;
+
+struct ObjectConstants
+{
+	DirectX::XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
+};
 
 using Microsoft::WRL::ComPtr;
 class D3DApplication
@@ -31,6 +36,13 @@ protected:
 	D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView()const;
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()const;
 	ID3D12Resource* CurrentBackBuffer()const;
+
+public:
+	void BuildDescriptorHeaps();
+	void BuildConstantBuffers();
+	void BuildRootSignature();
+	void BuildShadersAndInputLayout();
+	void BuildPSO();
 public:
 	static D3DApplication* Get();
 private:
@@ -78,4 +90,15 @@ private:
 	//设置屏幕
 	D3D12_VIEWPORT mScreenViewport;
 	D3D12_RECT mScissorRect;
+
+
+private:
+	ComPtr<ID3D12DescriptorHeap> mCbvHeap = nullptr;
+	std::unique_ptr<UploadBuffer<ObjectConstants>> mObjectCB = nullptr;
+	ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
+
+	ComPtr<ID3DBlob> mvsByteCode = nullptr;
+	ComPtr<ID3DBlob> mpsByteCode = nullptr;
+	std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
+	ComPtr<ID3D12PipelineState> mPSO = nullptr;
 };

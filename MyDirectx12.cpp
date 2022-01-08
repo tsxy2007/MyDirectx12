@@ -119,7 +119,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 
    D3DApplication::Get()->InitInstance(hInstance,hWnd);
-   D3DApplication::Get()->InitDirect3D();
+   D3DApplication::Get()->InitDirect3D(); 
    return TRUE;
 }
 

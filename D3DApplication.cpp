@@ -1,4 +1,4 @@
-﻿#include "D3DApplication.h"
+#include "D3DApplication.h"
 #include <string>
 #include <vector>
 #include <DirectXColors.h>
@@ -59,6 +59,131 @@ void D3DApplication::Draw()
 	mSpwapChain->Present(0, 0);
 	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
 	FlushCommandQueue();
+}
+
+void D3DApplication::BuildDescriptorHeaps()
+{
+	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+	cbvHeapDesc.NumDescriptors = 1;
+	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	cbvHeapDesc.NodeMask = 0;
+	mD3DDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&mCbvHeap));
+}
+
+void D3DApplication::BuildConstantBuffers()
+{
+	mObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(mD3DDevice.Get(), 1, true);
+
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+	D3D12_GPU_VIRTUAL_ADDRESS cbAddress = mObjectCB->Resource()->GetGPUVirtualAddress();
+
+	int boxCBufIndex = 0;
+
+	cbAddress += boxCBufIndex * objCBByteSize;
+
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+
+	cbvDesc.BufferLocation = cbAddress;
+	cbvDesc.SizeInBytes = objCBByteSize;
+
+	mD3DDevice->CreateConstantBufferView(
+		&cbvDesc,
+		mCbvHeap->GetCPUDescriptorHandleForHeapStart()
+	);
+}
+
+void D3DApplication::BuildRootSignature()
+{
+	// 根参数
+	CD3DX12_ROOT_PARAMETER rootParameter[1];
+
+	CD3DX12_DESCRIPTOR_RANGE cbvTable;
+	cbvTable.Init(
+		D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 
+		1, 
+		0 //绑定的槽号
+	);
+
+	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigdesc(
+		_countof(rootParameter), 
+		rootParameter, 
+		0, 
+		nullptr, 
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+
+
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigdesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+	assert(errorBlob== nullptr);
+
+	mD3DDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(&mRootSignature)
+	);
+}
+
+void D3DApplication::BuildShadersAndInputLayout()
+{
+	HRESULT hr = S_OK;
+
+	mvsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_0");
+	mpsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "PS", "ps_5_0");
+
+	mInputLayout =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+	};
+}
+
+void D3DApplication::BuildPSO()
+{
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
+	ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	//输入布局描述
+	psoDesc.InputLayout = { mInputLayout.data(),(UINT)mInputLayout.size() };
+	psoDesc.pRootSignature = mRootSignature.Get();
+	psoDesc.VS = {
+		reinterpret_cast<BYTE*>(mvsByteCode->GetBufferPointer()),
+		mvsByteCode->GetBufferSize()
+	};
+
+	psoDesc.PS = {
+		reinterpret_cast<BYTE*>(mpsByteCode->GetBufferPointer()),
+		mpsByteCode->GetBufferSize()
+	};
+	// 光栅器
+	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	// 混合
+	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	// 指定图元的拓扑类型
+	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	// 同时所用的渲染目标数量
+	psoDesc.NumRenderTargets = 1;
+	// 渲染目标的格式
+	psoDesc.RTVFormats[0] = mBackBufferFormat;
+	// 设置多重采样样本(个数最多32个)
+	psoDesc.SampleMask = UINT_MAX;
+	// 多重采样对每个像素采样的数量
+	psoDesc.SampleDesc.Count = b4xMassState ? 4 : 1;
+	// 多重采样对每个像素采样的质量
+	psoDesc.SampleDesc.Quality = b4xMassState ? (m4xMsaaQulity - 1) : 0;
+	// 指定用于配置深度/模板测试的模板/深度状态
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	// 深度/模板缓冲区的格式
+	psoDesc.DSVFormat = mDepthStencilFormat;
+	//创建pso 对象
+	mD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSO)); 
 }
 
 D3DApplication* D3DApplication::Get()
@@ -137,6 +262,19 @@ void D3DApplication::InitDirect3D()
 	CreateSwapChain();
 	//新建描述符表
 	CreateRtvAndDsvDescriptorHeaps();
+
+	// 创建描述符堆
+	BuildDescriptorHeaps();
+	//创建常量缓冲区
+	BuildConstantBuffers();
+	//根签名和描述符表
+	BuildRootSignature();
+	//
+	BuildShadersAndInputLayout();
+	// 创建模型；
+
+	//创建pso对象
+	BuildPSO();
 
 	//
 	OnResize();
