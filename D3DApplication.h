@@ -116,7 +116,10 @@ private:
 
 	// 索引缓冲区和顶点缓冲区
 	Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferGPU = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> VertexUploadBuffer = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferGPU = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> IndexUploadBuffer = nullptr;
+
 	UINT vbByteSize = 0;
 	UINT ibByteSize = 0;
 	UINT IndexCount = 0;

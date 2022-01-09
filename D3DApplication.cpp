@@ -248,12 +248,11 @@ void D3DApplication::BuildBoxGeometry()
 	vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 	ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
 	
-	Microsoft::WRL::ComPtr<ID3D12Resource> VertexUploadBuffer = nullptr;
+	
 	VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),mD3DCommandList.Get(),vertices.data(),
 		vbByteSize, VertexUploadBuffer);
 
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> IndexUploadBuffer = nullptr;
 	IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(), mD3DCommandList.Get(), indices.data(),
 		ibByteSize, IndexUploadBuffer);
 	
@@ -301,7 +300,7 @@ void D3DApplication::BuildPSO()
 
 float D3DApplication::AspectRatio() const
 {
-	return (mClientWidth) / mClientHeight;
+	return (float)(mClientWidth/ mClientHeight);
 }
 
 D3DApplication* D3DApplication::Get()
