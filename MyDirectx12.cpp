@@ -22,6 +22,7 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+bool bPase = false;
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -58,8 +59,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else
         {
-            D3DApplication::Get()->Update();
-            D3DApplication::Get()->Draw();
+            if (bPase)
+            {
+                bPase = false;
+                Sleep(100);
+            }
+            else
+            {
+				D3DApplication::Get()->Update();
+				D3DApplication::Get()->Draw();
+                bPase = true;
+            }
         }
     }
 

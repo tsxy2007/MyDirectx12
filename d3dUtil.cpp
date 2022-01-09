@@ -47,7 +47,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(ID3D12Device
 		IID_PPV_ARGS(defaultBuffer.GetAddressOf())
 	);
 	//
-	CD3DX12_HEAP_PROPERTIES UploadHeap(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_HEAP_PROPERTIES UploadHeap(D3D12_HEAP_TYPE_UPLOAD);
 	CD3DX12_RESOURCE_DESC UploadResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
 	device->CreateCommittedResource(
 		&UploadHeap,
@@ -61,7 +61,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(ID3D12Device
 	D3D12_SUBRESOURCE_DATA subResourceData = {};
 	subResourceData.pData = initData;
 	subResourceData.RowPitch = byteSize;
-	subResourceData.SlicePitch = byteSize;
+	subResourceData.SlicePitch = subResourceData.RowPitch;
 	//
 	CD3DX12_RESOURCE_BARRIER WriteBarrier = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),
 		D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST

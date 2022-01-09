@@ -58,20 +58,22 @@ void D3DApplication::Update()
 void D3DApplication::Draw()
 {
 	mD3DCommandAllocator->Reset();
-	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
+	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), mPSO.Get());
+
+
 	auto TmpCurrentBackBuffer = CurrentBackBuffer();
 	auto TmpCurrentBackBufferView = CurrentBackBufferView();
-	auto TmpDepthStencilView = DepthStencilView(); 
+	auto TmpDepthStencilView = DepthStencilView();
+	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
+	mD3DCommandList->RSSetScissorRects(1, &mScissorRect);
 	auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET); 
 	mD3DCommandList->ResourceBarrier(1, &barrier);
-	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
-	mD3DCommandList->RSSetScissorRects(1, &mScissorRect);
 	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, Colors::Red, 0, nullptr);
 	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
 
-	// 设置描述符堆
+	// 绑定描述符堆
 	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
 	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
@@ -378,7 +380,10 @@ void D3DApplication::InitDirect3D()
 	CreateSwapChain();
 	//新建描述符表
 	CreateRtvAndDsvDescriptorHeaps();
+	//
+	OnResize();
 
+	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
 	// 创建描述符堆
 	BuildDescriptorHeaps();
 	//创建常量缓冲区
@@ -391,8 +396,11 @@ void D3DApplication::InitDirect3D()
 	BuildBoxGeometry();
 	//创建pso对象
 	BuildPSO();
-	//
-	OnResize();
+
+	mD3DCommandList->Close();
+	ID3D12CommandList* cmdsLists[] = { mD3DCommandList.Get() };
+	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+	FlushCommandQueue();
 }
 
 void D3DApplication::LogAdapters()
