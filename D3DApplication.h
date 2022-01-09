@@ -16,6 +16,13 @@ struct ObjectConstants
 	DirectX::XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
 };
 
+struct Vertex
+{
+	XMFLOAT3 Pos;
+	XMFLOAT4 Color;
+};
+
+
 using Microsoft::WRL::ComPtr;
 class D3DApplication
 {
@@ -26,7 +33,9 @@ public:
 	virtual void InitInstance(HINSTANCE InInstance, HWND inHWND);
 	virtual void InitDirect3D();
 	virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+	virtual void Update();
 	virtual void Draw();
+
 protected:
 	void CreateCommandObjects();
 	void CreateSwapChain();
@@ -42,7 +51,10 @@ public:
 	void BuildConstantBuffers();
 	void BuildRootSignature();
 	void BuildShadersAndInputLayout();
+	void BuildBoxGeometry();
 	void BuildPSO();
+
+	float     AspectRatio()const;
 public:
 	static D3DApplication* Get();
 private:
@@ -101,4 +113,21 @@ private:
 	ComPtr<ID3DBlob> mpsByteCode = nullptr;
 	std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
 	ComPtr<ID3D12PipelineState> mPSO = nullptr;
+
+	// 索引缓冲区和顶点缓冲区
+	Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferGPU = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferGPU = nullptr;
+	UINT vbByteSize = 0;
+	UINT ibByteSize = 0;
+	UINT IndexCount = 0;
+
+	//
+	float mTheta = 1.5f * XM_PI;
+	float mPhi = XM_PIDIV4;
+	float mRadius = 5.0f;
+
+	// 
+	XMFLOAT4X4 mWorld = MathHelper::Identity4x4();
+	XMFLOAT4X4 mView = MathHelper::Identity4x4();
+	XMFLOAT4X4 mProj = MathHelper::Identity4x4();
 };

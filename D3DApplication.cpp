@@ -33,6 +33,28 @@ LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
+void D3DApplication::Update()
+{
+	float x = mRadius * sinf(mPhi) * cosf(mTheta);
+	float z = mRadius * sin(mPhi) * sinf(mTheta);
+	float y = mRadius * cosf(mPhi);
+
+	XMVECTOR POS = XMVectorSet(x, y, z, 1.f);
+	XMVECTOR target = XMVectorZero();
+	XMVECTOR up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+
+	XMMATRIX view = XMMatrixLookAtLH(POS, target, up);
+
+	XMStoreFloat4x4(&mView, view);
+	XMMATRIX world = XMLoadFloat4x4(&mWorld);
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+	XMMATRIX mvp = world * view * proj;
+
+	ObjectConstants objConstants ;
+	XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(mvp));
+	mObjectCB->CopyData(0, objConstants);
+}
+
 void D3DApplication::Draw()
 {
 	mD3DCommandAllocator->Reset();
@@ -48,6 +70,38 @@ void D3DApplication::Draw()
 	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, Colors::Red, 0, nullptr);
 	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
+
+	// 设置描述符堆
+	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
+	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+	{
+		D3D12_VERTEX_BUFFER_VIEW vbv;
+		vbv.BufferLocation = VertexBufferGPU->GetGPUVirtualAddress();
+		vbv.StrideInBytes = sizeof(Vertex);
+		vbv.SizeInBytes = vbByteSize;
+		mD3DCommandList->IASetVertexBuffers(0, 1, &vbv);
+	}
+	{
+		D3D12_INDEX_BUFFER_VIEW ibv;
+		ibv.BufferLocation = IndexBufferGPU->GetGPUVirtualAddress();
+		ibv.Format = DXGI_FORMAT_R16_UINT;
+		ibv.SizeInBytes = ibByteSize;
+		mD3DCommandList->IASetIndexBuffer(&ibv);
+	}
+
+	mD3DCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	//
+	CD3DX12_GPU_DESCRIPTOR_HANDLE cbv(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+	cbv.Offset(0, mCbvSrvUavDescriptorSize);
+	mD3DCommandList->SetGraphicsRootDescriptorTable(0, cbv);
+
+	//绘制命令
+	mD3DCommandList->DrawIndexedInstanced(
+		IndexCount,
+		1, 0, 0, 0);
+
 	auto bakbarrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	mD3DCommandList->ResourceBarrier(1, &bakbarrier);
@@ -146,6 +200,63 @@ void D3DApplication::BuildShadersAndInputLayout()
 	};
 }
 
+void D3DApplication::BuildBoxGeometry()
+{
+
+	std::array<Vertex, 8> vertices =
+	{
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
+		Vertex({ XMFLOAT3(-1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Black) }),
+		Vertex({ XMFLOAT3(+1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Red) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Blue) }),
+		Vertex({ XMFLOAT3(-1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Yellow) }),
+		Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) })
+	};
+
+	std::array<std::uint16_t, 36> indices =
+	{
+		// front face
+		0, 1, 2,
+		0, 2, 3,
+
+		// back face
+		4, 6, 5,
+		4, 7, 6,
+
+		// left face
+		4, 5, 1,
+		4, 1, 0,
+
+		// right face
+		3, 2, 6,
+		3, 6, 7,
+
+		// top face
+		1, 5, 6,
+		1, 6, 2,
+
+		// bottom face
+		4, 0, 3,
+		4, 3, 7
+	};
+
+	IndexCount = indices.size();
+	vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+	
+	Microsoft::WRL::ComPtr<ID3D12Resource> VertexUploadBuffer = nullptr;
+	VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),mD3DCommandList.Get(),vertices.data(),
+		vbByteSize, VertexUploadBuffer);
+
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> IndexUploadBuffer = nullptr;
+	IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(), mD3DCommandList.Get(), indices.data(),
+		ibByteSize, IndexUploadBuffer);
+	
+}
+
 void D3DApplication::BuildPSO()
 {
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
@@ -184,6 +295,11 @@ void D3DApplication::BuildPSO()
 	psoDesc.DSVFormat = mDepthStencilFormat;
 	//创建pso 对象
 	mD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSO)); 
+}
+
+float D3DApplication::AspectRatio() const
+{
+	return (mClientWidth) / mClientHeight;
 }
 
 D3DApplication* D3DApplication::Get()
@@ -269,13 +385,12 @@ void D3DApplication::InitDirect3D()
 	BuildConstantBuffers();
 	//根签名和描述符表
 	BuildRootSignature();
-	//
+	//顶点与输入布局
 	BuildShadersAndInputLayout();
 	// 创建模型；
-
+	BuildBoxGeometry();
 	//创建pso对象
 	BuildPSO();
-
 	//
 	OnResize();
 }
@@ -488,6 +603,10 @@ void D3DApplication::OnResize()
 	mScreenViewport.MaxDepth = 1.0f;
 
 	mScissorRect = { 0, 0, mClientWidth, mClientHeight };
+
+	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * XM_PI, AspectRatio(), 1.f, 1000.f);
+	XMStoreFloat4x4(&mProj, P);
+
 }
 
 void D3DApplication::FlushCommandQueue()

@@ -58,6 +58,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else
         {
+            D3DApplication::Get()->Update();
             D3DApplication::Get()->Draw();
         }
     }
