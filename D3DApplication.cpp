@@ -94,7 +94,7 @@ void D3DApplication::Draw()
 
 	mD3DCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	//
+	//绑定常量缓冲堆
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbv(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 	cbv.Offset(0, mCbvSrvUavDescriptorSize);
 	mD3DCommandList->SetGraphicsRootDescriptorTable(0, cbv);

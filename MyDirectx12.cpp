@@ -59,12 +59,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else
         {
-            if (bPase)
-            {
-                bPase = false;
-                Sleep(100);
-            }
-            else
+			if (bPase)
+			{
+				bPase = false;
+				Sleep(100);
+			}
+			else
             {
 				D3DApplication::Get()->Update();
 				D3DApplication::Get()->Draw();
