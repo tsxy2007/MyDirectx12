@@ -204,7 +204,7 @@ void D3DApplication::BuildShadersAndInputLayout()
 
 void D3DApplication::BuildBoxGeometry()
 {
-
+	//创建顶点
 	std::array<Vertex, 8> vertices =
 	{
 		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
@@ -216,7 +216,7 @@ void D3DApplication::BuildBoxGeometry()
 		Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) }),
 		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) })
 	};
-
+	// 构造索引
 	std::array<std::uint16_t, 36> indices =
 	{
 		// front face
@@ -248,11 +248,11 @@ void D3DApplication::BuildBoxGeometry()
 	vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 	ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
 	
-	
+	// 顶点默认缓冲区
 	VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),mD3DCommandList.Get(),vertices.data(),
 		vbByteSize, VertexUploadBuffer);
 
-
+	// 索引默认缓冲区
 	IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(), mD3DCommandList.Get(), indices.data(),
 		ibByteSize, IndexUploadBuffer);
 	
