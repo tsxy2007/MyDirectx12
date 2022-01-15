@@ -7,21 +7,30 @@
 
 #include "d3dUtil.h"
 #include "UploadBuffer.h"
+#include "FrameResource.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
-struct ObjectConstants
-{
-	DirectX::XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
-};
+const int gNumFrameResource = 3;
 
-struct Vertex
+struct RenderItem 
 {
-	XMFLOAT3 Pos;
-	XMFLOAT4 Color;
-};
+	RenderItem() = default;
 
+	XMFLOAT4X4 World = MathHelper::Identity4x4();
+
+	int NumFrameDirty = gNumFrameResource;
+
+	UINT ObjCBIndex = -1;
+
+	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+	UINT IndexCount = 0;
+	UINT StartIndexLocation = 0;
+	int BaseVertexLocation = 0;
+	
+};
 
 using Microsoft::WRL::ComPtr;
 class D3DApplication
@@ -53,6 +62,13 @@ public:
 	void BuildShadersAndInputLayout();
 	void BuildBoxGeometry();
 	void BuildPSO();
+
+	// CBV
+	void BuildConstantBufferViews();
+	// 创建FrameResource
+	void BuildFrameResource();
+	// 绘制每个item
+	void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
 
 	float     AspectRatio()const;
 public:
@@ -133,4 +149,10 @@ private:
 	XMFLOAT4X4 mWorld = MathHelper::Identity4x4();
 	XMFLOAT4X4 mView = MathHelper::Identity4x4();
 	XMFLOAT4X4 mProj = MathHelper::Identity4x4();
+
+
+	//FrameResource
+	std::vector<std::unique_ptr<FrameResource>> mFrameResource;
+	FrameResource* mCurrentFrameResource = nullptr;
+	int mCurrentFrameResourceIndex = 0;
 };

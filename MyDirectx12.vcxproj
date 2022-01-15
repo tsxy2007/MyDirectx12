@@ -145,6 +145,7 @@
     <ClInclude Include="d3dUtil.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="FrameResource.h" />
     <ClInclude Include="MathHelper.h" />
     <ClInclude Include="MyDirectx12.h" />
     <ClInclude Include="Resource.h" />
@@ -154,6 +155,7 @@
   <ItemGroup>
     <ClCompile Include="D3DApplication.cpp" />
     <ClCompile Include="d3dUtil.cpp" />
+    <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="MathHelper.cpp" />
     <ClCompile Include="MyDirectx12.cpp" />
     <ClCompile Include="UploadBuffer.cpp" />

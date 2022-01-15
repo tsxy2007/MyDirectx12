@@ -51,7 +51,7 @@ void D3DApplication::Update()
 	XMMATRIX mvp = world * view * proj;
 
 	ObjectConstants objConstants ;
-	XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(mvp));
+	XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(mvp));
 	mObjectCB->CopyData(0, objConstants);
 }
 
@@ -163,6 +163,7 @@ void D3DApplication::BuildRootSignature()
 	);
 
 	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
+	//rootParameter[1].InitAsConstants(12, 0);
 
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigdesc(
 		_countof(rootParameter), 
@@ -296,6 +297,21 @@ void D3DApplication::BuildPSO()
 	psoDesc.DSVFormat = mDepthStencilFormat;
 	//创建pso 对象
 	mD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSO)); 
+}
+
+void D3DApplication::BuildConstantBufferViews()
+{
+
+}
+
+void D3DApplication::BuildFrameResource()
+{
+
+}
+
+void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem)
+{
+
 }
 
 float D3DApplication::AspectRatio() const
