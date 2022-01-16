@@ -39,7 +39,7 @@ void D3DApplication::Update()
 	mCurrentFrameResourceIndex = (mCurrentFrameResourceIndex + 1) % gNumFrameResource;
 	mCurrentFrameResource = mFrameResource[mCurrentFrameResourceIndex].get();
 
-	if (mCurrentFrameResource->Fence != 0 ;mFence->GetCompletedValue()<mCurrentFrameResource->Fence)
+	if (mCurrentFrameResource->Fence != 0 &&mFence->GetCompletedValue()<mCurrentFrameResource->Fence)
 	{
 		HANDLE eventHandle = CreateEventEx(nullptr, L"false", false, EVENT_ALL_ACCESS);
 		mFence->SetEventOnCompletion(mCurrentFrameResource->Fence, eventHandle);
@@ -437,7 +437,7 @@ void D3DApplication::BuildRenderItems()
 {
 	UINT objCBIndex = 0;
 	auto boxRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixTranslation(0.0f, 0.0f, 0.0f));
+	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixTranslation(0.0f, 0.0f, 0.0f));
 
 	boxRitem->ObjCBIndex = objCBIndex++;
 	boxRitem->Geo = mGeometries["ShapGeo"].get();
@@ -567,9 +567,9 @@ void D3DApplication::InitDirect3D()
 	BuildShadersAndInputLayout();
 	// 创建模型；
 	BuildBoxGeometry();
-	//
+	// 创建渲染项
 	BuildRenderItems();
-	//
+	// 创建帧资源
 	BuildFrameResource();
 	// 创建描述符堆
 	BuildDescriptorHeaps();
