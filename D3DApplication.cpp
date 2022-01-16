@@ -36,9 +36,12 @@ LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 void D3DApplication::Update()
 {
 	UpdateCamera();
+	// 循环往复的获取帧资源数组中的元素;
 	mCurrentFrameResourceIndex = (mCurrentFrameResourceIndex + 1) % gNumFrameResource;
 	mCurrentFrameResource = mFrameResource[mCurrentFrameResourceIndex].get();
 
+	// GPU端是否已执行完处理当前帧资源的所有命令
+	// 如果没有就令CPU等待,直到GPU完成命令的执行并抵达这个围栏点;
 	if (mCurrentFrameResource->Fence != 0 ;mFence->GetCompletedValue()<mCurrentFrameResource->Fence)
 	{
 		HANDLE eventHandle = CreateEventEx(nullptr, L"false", false, EVENT_ALL_ACCESS);
@@ -97,8 +100,10 @@ void D3DApplication::Draw()
 	mSpwapChain->Present(0, 0);
 	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
 	
+	// 添加围栏值,将命令标记到此围栏点;
 	mCurrentFrameResource->Fence = ++mCurrentFence;
-
+	// 向命令队列添加一条指令来设置一个新的围栏点
+	// 由于当前的GPU正在执行绘制命令,所以在GPU处理完Signal()函数之前的所有命令以前，并不会设置此新的围栏点。
 	mD3DCommandQueue->Signal(mFence.Get(), mCurrentFence);
 }
 
