@@ -8,11 +8,6 @@ struct ObjectConstants
 	DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();
 };
 
-//struct ObjectConstants
-//{
-//	DirectX::XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
-//};
-
 struct Vertex
 {
 	DirectX::XMFLOAT3 Pos;

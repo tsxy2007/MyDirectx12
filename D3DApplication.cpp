@@ -35,6 +35,120 @@ LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 void D3DApplication::Update()
 {
+	UpdateCamera();
+	mCurrentFrameResourceIndex = (mCurrentFrameResourceIndex + 1) % gNumFrameResource;
+	mCurrentFrameResource = mFrameResource[mCurrentFrameResourceIndex].get();
+
+	if (mCurrentFrameResource->Fence != 0 ;mFence->GetCompletedValue()<mCurrentFrameResource->Fence)
+	{
+		HANDLE eventHandle = CreateEventEx(nullptr, L"false", false, EVENT_ALL_ACCESS);
+		mFence->SetEventOnCompletion(mCurrentFrameResource->Fence, eventHandle);
+		WaitForSingleObject(eventHandle, INFINITE);
+		CloseHandle(eventHandle);
+	}
+	UpdateObjectCBs();
+	UpdateMainPassCB();
+}
+
+void D3DApplication::Draw()
+{
+	auto mCurrentCommandAlloc = mCurrentFrameResource->CmdListAlloc;
+	mCurrentCommandAlloc->Reset();
+	mD3DCommandList->Reset(mCurrentCommandAlloc.Get(), mPSO.Get());
+
+
+	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
+	mD3DCommandList->RSSetScissorRects(1, &mScissorRect);
+
+
+	auto TmpCurrentBackBuffer = CurrentBackBuffer();
+	auto TmpCurrentBackBufferView = CurrentBackBufferView();
+	auto TmpDepthStencilView = DepthStencilView(); 
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET)));
+
+	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, Colors::LightSteelBlue, 0, nullptr);
+	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
+
+	// 绑定描述符堆
+	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
+	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+
+
+	//绑定常量缓冲堆
+	int passCbvIndex = mPassCbvOffset + mCurrentFrameResourceIndex;
+	auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+	passCbvHandle.Offset(passCbvIndex, mCbvSrvUavDescriptorSize);
+	mD3DCommandList->SetGraphicsRootDescriptorTable(0, passCbvHandle);
+
+	//绘制命令
+
+	DrawRenderItems(mD3DCommandList.Get(), mOpaqueRitems);
+
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT)));
+	mD3DCommandList->Close();
+
+	ID3D12CommandList* cmdLists[] = { mD3DCommandList.Get() };
+	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);
+
+	mSpwapChain->Present(0, 0);
+	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+	
+	mCurrentFrameResource->Fence = ++mCurrentFence;
+
+	mD3DCommandQueue->Signal(mFence.Get(), mCurrentFence);
+}
+
+void D3DApplication::UpdateObjectCBs()
+{
+	auto currObjectCB = mCurrentFrameResource->ObjectCB.get();
+	for (auto& e : mAllRitems)
+	{
+		if (e->NumFrameDirty > 0 )
+		{
+			XMMATRIX world = XMLoadFloat4x4(&e->World);
+			ObjectConstants objConstants;
+			XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
+
+			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
+			e->NumFrameDirty--;
+		}
+	}
+}
+
+void D3DApplication::UpdateMainPassCB()
+{
+	XMMATRIX view = XMLoadFloat4x4(&mView);
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+
+	XMMATRIX viewProj = XMMatrixMultiply(view, proj);
+	XMMATRIX invView = XMMatrixInverse(get_rvalue_ptr(XMMatrixDeterminant(view)), view);
+	XMMATRIX invProj = XMMatrixInverse(get_rvalue_ptr(XMMatrixDeterminant(proj)), proj);
+	XMMATRIX invViewProj = XMMatrixInverse(get_rvalue_ptr(XMMatrixDeterminant(viewProj)), viewProj);
+
+	XMStoreFloat4x4(&mMainPassCB.View, XMMatrixTranspose(view));
+	XMStoreFloat4x4(&mMainPassCB.InvView, XMMatrixTranspose(invView));
+	XMStoreFloat4x4(&mMainPassCB.Proj, XMMatrixTranspose(proj));
+	XMStoreFloat4x4(&mMainPassCB.InvProj, XMMatrixTranspose(invProj));
+	XMStoreFloat4x4(&mMainPassCB.ViewProj, XMMatrixTranspose(viewProj));
+	XMStoreFloat4x4(&mMainPassCB.InvViewProj, XMMatrixTranspose(invViewProj));
+	mMainPassCB.EyePosW = mEyePos;
+	mMainPassCB.RenderTargetSize = XMFLOAT2((float)mClientWidth, (float)mClientHeight);
+	mMainPassCB.InvRenderTargetSize = XMFLOAT2(1.0f / mClientWidth, 1.0f / mClientHeight);
+	mMainPassCB.NearZ = 1.0f;
+	mMainPassCB.FarZ = 1000.0f;
+	//mMainPassCB.TotalTime = gt.TotalTime();
+	//mMainPassCB.DeltaTime = gt.DeltaTime();
+
+	auto currPassCB = mCurrentFrameResource->PassCB.get();
+	currPassCB->CopyData(0, mMainPassCB);
+}
+
+void D3DApplication::UpdateCamera()
+{
 	float x = mRadius * sinf(mPhi) * cosf(mTheta);
 	float z = mRadius * sin(mPhi) * sinf(mTheta);
 	float y = mRadius * cosf(mPhi);
@@ -46,84 +160,22 @@ void D3DApplication::Update()
 	XMMATRIX view = XMMatrixLookAtLH(POS, target, up);
 
 	XMStoreFloat4x4(&mView, view);
-	XMMATRIX world = XMLoadFloat4x4(&mWorld);
-	XMMATRIX proj = XMLoadFloat4x4(&mProj);
-	XMMATRIX mvp = world * view * proj;
-
-	ObjectConstants objConstants ;
-	XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(mvp));
-	mObjectCB->CopyData(0, objConstants);
-}
-
-void D3DApplication::Draw()
-{
-	mD3DCommandAllocator->Reset();
-	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), mPSO.Get());
-
-
-	auto TmpCurrentBackBuffer = CurrentBackBuffer();
-	auto TmpCurrentBackBufferView = CurrentBackBufferView();
-	auto TmpDepthStencilView = DepthStencilView();
-	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
-	mD3DCommandList->RSSetScissorRects(1, &mScissorRect);
-	auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
-		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET); 
-	mD3DCommandList->ResourceBarrier(1, &barrier);
-	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, Colors::Red, 0, nullptr);
-	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
-
-	// 绑定描述符堆
-	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
-	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
-	{
-		D3D12_VERTEX_BUFFER_VIEW vbv;
-		vbv.BufferLocation = VertexBufferGPU->GetGPUVirtualAddress();
-		vbv.StrideInBytes = sizeof(Vertex);
-		vbv.SizeInBytes = vbByteSize;
-		mD3DCommandList->IASetVertexBuffers(0, 1, &vbv);
-	}
-	{
-		D3D12_INDEX_BUFFER_VIEW ibv;
-		ibv.BufferLocation = IndexBufferGPU->GetGPUVirtualAddress();
-		ibv.Format = DXGI_FORMAT_R16_UINT;
-		ibv.SizeInBytes = ibByteSize;
-		mD3DCommandList->IASetIndexBuffer(&ibv);
-	}
-
-	mD3DCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-	//绑定常量缓冲堆
-	CD3DX12_GPU_DESCRIPTOR_HANDLE cbv(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
-	cbv.Offset(0, mCbvSrvUavDescriptorSize);
-	mD3DCommandList->SetGraphicsRootDescriptorTable(0, cbv);
-
-	//绘制命令
-	mD3DCommandList->DrawIndexedInstanced(
-		IndexCount,
-		1, 0, 0, 0);
-
-	auto bakbarrier = CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
-		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-	mD3DCommandList->ResourceBarrier(1, &bakbarrier);
-	mD3DCommandList->Close();
-
-	ID3D12CommandList* cmdLists[] = { mD3DCommandList.Get() };
-	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);
-
-	mSpwapChain->Present(0, 0);
-	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
-	FlushCommandQueue();
 }
 
 void D3DApplication::BuildDescriptorHeaps()
 {
+	UINT objCount = (UINT)mOpaqueRitems.size();
+
+	UINT numDescriptors = (objCount + 1) * gNumFrameResource;
+
+	mPassCbvOffset = objCount * gNumFrameResource;
+
 	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-	cbvHeapDesc.NumDescriptors = 1;
+	cbvHeapDesc.NumDescriptors = numDescriptors;
 	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	cbvHeapDesc.NodeMask = 0;
+	cbvHeapDesc.NodeMask= 0;
+
 	mD3DDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&mCbvHeap));
 }
 
@@ -153,7 +205,7 @@ void D3DApplication::BuildConstantBuffers()
 void D3DApplication::BuildRootSignature()
 {
 	// 根参数
-	CD3DX12_ROOT_PARAMETER rootParameter[1];
+	CD3DX12_ROOT_PARAMETER rootParameter[2];
 
 	CD3DX12_DESCRIPTOR_RANGE cbvTable;
 	cbvTable.Init(
@@ -162,8 +214,15 @@ void D3DApplication::BuildRootSignature()
 		0 //绑定的槽号
 	);
 
+	CD3DX12_DESCRIPTOR_RANGE cbvTable1;
+	cbvTable1.Init(
+		D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+		1,
+		1 //绑定的槽号
+	);
+
 	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
-	//rootParameter[1].InitAsConstants(12, 0);
+	rootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
 
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigdesc(
 		_countof(rootParameter), 
@@ -193,13 +252,13 @@ void D3DApplication::BuildShadersAndInputLayout()
 {
 	HRESULT hr = S_OK;
 
-	mvsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_0");
-	mpsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "PS", "ps_5_0");
+	mvsByteCode = d3dUtil::CompileShader(L"Shaders\\Color_02.hlsl", nullptr, "VS", "vs_5_0");
+	mpsByteCode = d3dUtil::CompileShader(L"Shaders\\Color_02.hlsl", nullptr, "PS", "ps_5_0");
 
 	mInputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 }
 
@@ -249,14 +308,35 @@ void D3DApplication::BuildBoxGeometry()
 	vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 	ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
 	
+	std::unique_ptr<MeshGeometry> mBoxGeo = std::make_unique<MeshGeometry>();
+	mBoxGeo->Name = "ShapGeo";
+
+
 	// 顶点默认缓冲区
-	VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),mD3DCommandList.Get(),vertices.data(),
-		vbByteSize, VertexUploadBuffer);
+	mBoxGeo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),mD3DCommandList.Get(),vertices.data(),
+		vbByteSize, mBoxGeo->VertexBufferUploader);
 
 	// 索引默认缓冲区
-	IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(), mD3DCommandList.Get(), indices.data(),
-		ibByteSize, IndexUploadBuffer);
-	
+	mBoxGeo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(), mD3DCommandList.Get(), indices.data(),
+		ibByteSize, mBoxGeo->IndexBufferUploader);
+
+	mBoxGeo->VertexBufferByteSize = vbByteSize;
+	mBoxGeo->VertexByteStride = sizeof(Vertex);
+	mBoxGeo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	mBoxGeo->IndexBufferByteSize = ibByteSize;
+
+
+	UINT BoxIndexOffset = 0;
+	UINT BoxVertexOffset = 0;
+
+	SubmeshGeometry subBoxGeo;
+	subBoxGeo.IndexCount = (UINT)IndexCount;
+	subBoxGeo.StartIndexLocation = BoxIndexOffset;
+	subBoxGeo.BaseVertexLocation = BoxVertexOffset;
+
+	mBoxGeo->DrawArgs["box"] = subBoxGeo;
+
+	mGeometries[mBoxGeo->Name] = std::move(mBoxGeo);
 }
 
 void D3DApplication::BuildPSO()
@@ -301,17 +381,98 @@ void D3DApplication::BuildPSO()
 
 void D3DApplication::BuildConstantBufferViews()
 {
+	// 计算常量缓冲区大小;
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	// 绘制元素个数;
+	UINT objCount = (UINT)mOpaqueRitems.size();
 
+	for (size_t i = 0; i < gNumFrameResource; i++)
+	{
+		auto objctCB = mFrameResource[i]->ObjectCB->Resource();
+		for (UINT j = 0; j < objCount; j++)
+		{
+			D3D12_GPU_VIRTUAL_ADDRESS cbAddress = objctCB->GetGPUVirtualAddress();
+
+			cbAddress += j * objCBByteSize;
+			int heapIndex = i * objCount + j;
+			auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(mCbvHeap->GetCPUDescriptorHandleForHeapStart());
+			handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);
+
+			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+			cbvDesc.BufferLocation = cbAddress;
+			cbvDesc.SizeInBytes = objCBByteSize;
+
+			mD3DDevice->CreateConstantBufferView(&cbvDesc, handle);
+		}
+	}
+
+	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
+
+	for (int frameIndex = 0; frameIndex < gNumFrameResource; ++frameIndex)
+	{
+		auto passCB = mFrameResource[frameIndex]->PassCB->Resource();
+		D3D12_GPU_VIRTUAL_ADDRESS cbAddress = passCB->GetGPUVirtualAddress();
+
+		int heapIndex = mPassCbvOffset + frameIndex;
+		auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(mCbvHeap->GetCPUDescriptorHandleForHeapStart());
+		handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);
+
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+		cbvDesc.BufferLocation = cbAddress;
+		cbvDesc.SizeInBytes = passCBByteSize;
+
+		mD3DDevice->CreateConstantBufferView(&cbvDesc, handle);
+	}
 }
 
 void D3DApplication::BuildFrameResource()
 {
+	for (int i = 0 ;i<gNumFrameResource;i++)
+	{
+		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 1, (UINT)mAllRitems.size()));
+	}
+}
 
+void D3DApplication::BuildRenderItems()
+{
+	UINT objCBIndex = 0;
+	auto boxRitem = std::make_unique<RenderItem>();
+	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixTranslation(0.0f, 0.0f, 0.0f));
+
+	boxRitem->ObjCBIndex = objCBIndex++;
+	boxRitem->Geo = mGeometries["ShapGeo"].get();
+	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
+	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
+	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
+	mAllRitems.push_back(std::move(boxRitem));
+
+
+
+	for (auto& e : mAllRitems)
+	{
+		mOpaqueRitems.push_back(e.get());
+	}
 }
 
 void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem)
 {
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
 
+	for (int i = 0; i < ritem.size(); i++)
+	{
+		auto ri = ritem[i];
+
+		cmdList->IASetVertexBuffers(0, 1, get_rvalue_ptr(ri->Geo->VertexBufferView()));
+		cmdList->IASetIndexBuffer(get_rvalue_ptr(ri->Geo->IndexBufferView()));
+		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+		UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mOpaqueRitems.size() + ri->ObjCBIndex;
+		auto cbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+		cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
+		cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
+		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+	}
 }
 
 float D3DApplication::AspectRatio() const
@@ -399,16 +560,21 @@ void D3DApplication::InitDirect3D()
 	OnResize();
 
 	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
-	// 创建描述符堆
-	BuildDescriptorHeaps();
-	//创建常量缓冲区
-	BuildConstantBuffers();
+
 	//根签名和描述符表
 	BuildRootSignature();
 	//顶点与输入布局
 	BuildShadersAndInputLayout();
 	// 创建模型；
 	BuildBoxGeometry();
+	//
+	BuildRenderItems();
+	//
+	BuildFrameResource();
+	// 创建描述符堆
+	BuildDescriptorHeaps();
+	//创建常量缓冲区
+	BuildConstantBufferViews();
 	//创建pso对象
 	BuildPSO();
 

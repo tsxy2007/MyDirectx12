@@ -25,6 +25,13 @@
 #include <dxgi1_4.h>
 #include <assert.h>
 
+#include <type_traits>
+template<typename T>
+requires(!std::is_lvalue_reference_v<T>)
+T* get_rvalue_ptr(T&& v) {
+	return &v;
+}
+
 class d3dUtil
 {
 public:
@@ -49,3 +56,57 @@ public:
 	);
 };
 
+struct SubmeshGeometry
+{
+	UINT IndexCount = 0;
+	UINT StartIndexLocation = 0;
+	INT BaseVertexLocation = 0;
+	DirectX::BoundingBox Bounds;
+};
+
+struct MeshGeometry
+{
+	std::string Name;
+
+	Microsoft::WRL::ComPtr<ID3DBlob> VertexBufferCPU = nullptr;
+	Microsoft::WRL::ComPtr<ID3DBlob> IndexBufferCPU = nullptr;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferGPU = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferGPU = nullptr;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferUploader = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferUploader = nullptr;
+
+	// 数据相关信息
+	UINT VertexByteStride = 0;
+	UINT VertexBufferByteSize = 0;// 缓冲区大小
+	DXGI_FORMAT IndexFormat = DXGI_FORMAT_R16_UINT;
+	UINT IndexBufferByteSize = 0;
+
+	//
+	std::unordered_map<std::string, SubmeshGeometry> DrawArgs;
+
+	D3D12_VERTEX_BUFFER_VIEW VertexBufferView()
+	{
+		D3D12_VERTEX_BUFFER_VIEW vbv;
+		vbv.SizeInBytes = VertexBufferByteSize;
+		vbv.StrideInBytes = VertexByteStride;
+		vbv.BufferLocation = VertexBufferGPU->GetGPUVirtualAddress();
+		return vbv;
+	}
+
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView()
+	{
+		D3D12_INDEX_BUFFER_VIEW ibv;
+		ibv.BufferLocation = IndexBufferGPU->GetGPUVirtualAddress();
+		ibv.Format = IndexFormat;
+		ibv.SizeInBytes = IndexBufferByteSize;
+		return ibv;
+	}
+
+	void DisposeUploaders()
+	{
+		VertexBufferUploader = nullptr;
+		IndexBufferUploader = nullptr;
+	}
+};

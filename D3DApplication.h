@@ -29,6 +29,8 @@ struct RenderItem
 	UINT IndexCount = 0;
 	UINT StartIndexLocation = 0;
 	int BaseVertexLocation = 0;
+
+	MeshGeometry* Geo = nullptr;
 	
 };
 
@@ -44,6 +46,10 @@ public:
 	virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 	virtual void Update();
 	virtual void Draw();
+
+	void UpdateObjectCBs();
+	void UpdateMainPassCB();
+	void UpdateCamera();
 
 protected:
 	void CreateCommandObjects();
@@ -62,11 +68,12 @@ public:
 	void BuildShadersAndInputLayout();
 	void BuildBoxGeometry();
 	void BuildPSO();
-
 	// CBV
 	void BuildConstantBufferViews();
 	// 创建FrameResource
 	void BuildFrameResource();
+	//
+	void BuildRenderItems();
 	// 绘制每个item
 	void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
 
@@ -108,12 +115,14 @@ private:
 
 	DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	// GPU 与cpu 交互
+	// GPU 与cpu 交互 废弃
 	ComPtr<struct ID3D12Fence> mFence;
 	UINT64 mCurrentFence = 0;
 	ComPtr<IDXGISwapChain> mSpwapChain;
 	ComPtr<ID3D12Resource> mSwapChainBuffer[SwapChainBufferCount];
 	ComPtr<ID3D12Resource> mDepthStencilBuffer;
+
+	std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> mGeometries;
 
 	//设置屏幕
 	D3D12_VIEWPORT mScreenViewport;
@@ -155,4 +164,14 @@ private:
 	std::vector<std::unique_ptr<FrameResource>> mFrameResource;
 	FrameResource* mCurrentFrameResource = nullptr;
 	int mCurrentFrameResourceIndex = 0;
+
+	// render items
+	std::vector<std::unique_ptr<RenderItem>> mAllRitems;
+	std::vector<RenderItem*> mOpaqueRitems;
+
+	PassConstants mMainPassCB;
+	UINT mPassCbvOffset = 0;
+
+	XMFLOAT3 mEyePos = { 0.0f, 0.0f, 0.0f };
+
 };
