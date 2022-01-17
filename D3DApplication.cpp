@@ -84,6 +84,7 @@ void D3DApplication::Draw()
 	int passCbvIndex = mPassCbvOffset + mCurrentFrameResourceIndex;
 	auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 	passCbvHandle.Offset(passCbvIndex, mCbvSrvUavDescriptorSize);
+	// 绑定的槽号，cbv句柄
 	mD3DCommandList->SetGraphicsRootDescriptorTable(0, passCbvHandle);
 
 	//绘制命令
