@@ -18,19 +18,19 @@ struct RenderItem
 {
 	RenderItem() = default;
 
-	XMFLOAT4X4 World = MathHelper::Identity4x4();
+	XMFLOAT4X4 World = MathHelper::Identity4x4(); // 物体局部空间相对于世界空间的世界矩阵，位置，朝向，大小
 
-	int NumFrameDirty = gNumFrameResource;
+	int NumFrameDirty = gNumFrameResource; // 更新标记
 
-	UINT ObjCBIndex = -1;
+	UINT ObjCBIndex = -1; // 指向常量缓冲区对应于当前渲染项中的物体常量缓冲区
 
-	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST; // 图元拓扑
 
 	UINT IndexCount = 0;
 	UINT StartIndexLocation = 0;
 	int BaseVertexLocation = 0;
 
-	MeshGeometry* Geo = nullptr;
+	MeshGeometry* Geo = nullptr; // 此渲染项参与绘制的几何体
 	
 };
 
