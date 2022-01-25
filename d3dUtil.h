@@ -26,6 +26,10 @@
 #include <assert.h>
 
 #include <type_traits>
+
+
+const int gNumFrameResource = 3;
+
 template<typename T>
 requires(!std::is_lvalue_reference_v<T>)
 T* get_rvalue_ptr(T&& v) {
@@ -62,6 +66,34 @@ struct SubmeshGeometry
 	UINT StartIndexLocation = 0;
 	INT BaseVertexLocation = 0;
 	DirectX::BoundingBox Bounds;
+};
+
+// 材质
+struct Material
+{
+	// 便于查找材质的唯一对应名称
+	std::string Name;
+
+	// 本材质的常量缓冲区索引
+	int MatCBIndex = -1;
+
+	// 更新标记。
+	int NumFramesDirty = gNumFrameResource;
+
+	//用于着色的材质常量缓冲区数据
+	DirectX::XMFLOAT4 DiffuseAlbedo = { 1.f,1.f,1.f,1.f }; // 漫反射照率
+	DirectX::XMFLOAT3 FresnelR0 = { 0.01f,0.01f,0.01f }; // 材质属性
+	float Roughness = 0.25f; //粗糙度
+
+	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
+};
+
+// 材质缓冲区
+struct MaterialConstants
+{
+	DirectX::XMFLOAT4 DiffuseAlbedo = { 1.f,1.f,1.f,1.f };
+	DirectX::XMFLOAT3 FresnelR0 = { 0.01f,0.01f,0.01f };
+	float Roughness = 0.25f;
 };
 
 struct MeshGeometry

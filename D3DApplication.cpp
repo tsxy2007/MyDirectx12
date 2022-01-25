@@ -435,7 +435,7 @@ void D3DApplication::BuildFrameResource()
 {
 	for (int i = 0 ;i<gNumFrameResource;i++)
 	{
-		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 1, (UINT)mAllRitems.size()));
+		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 1, (UINT)mAllRitems.size(),(UINT)mMaterials.size()));
 	}
 }
 
@@ -484,6 +484,37 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 float D3DApplication::AspectRatio() const
 {
 	return (float)(mClientWidth/ mClientHeight);
+}
+
+void D3DApplication::BuildMaterials()
+{
+	auto grass = std::make_unique<Material>();
+	grass->Name = "grass";
+	grass->MatCBIndex = 0;
+	grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.2f, 1.f);
+	grass->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	grass->Roughness = 0.125f;
+	mMaterials["grass"] = std::move(grass);
+}
+
+void D3DApplication::UpdateMaterialCBs()
+{
+	auto currMaterialCB = mCurrentFrameResource->MaterialCB.get();
+
+	for (auto& m : mMaterials)
+	{
+		Material* mat = m.second.get();
+		if (mat->NumFramesDirty > 0)
+		{
+			MaterialConstants matConstants;
+			matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
+			matConstants.FresnelR0 = mat->FresnelR0;
+			matConstants.Roughness = mat->Roughness;
+
+			currMaterialCB->CopyData(mat->MatCBIndex, matConstants);
+			mat->NumFramesDirty--;
+		}
+	}
 }
 
 D3DApplication* D3DApplication::Get()

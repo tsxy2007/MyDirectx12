@@ -12,7 +12,6 @@
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
-const int gNumFrameResource = 3;
 
 struct RenderItem 
 {
@@ -78,6 +77,13 @@ public:
 	void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
 
 	float     AspectRatio()const;
+
+	// 光照begin
+	
+	void BuildMaterials();
+
+	void UpdateMaterialCBs();
+	// 光照 end
 public:
 	static D3DApplication* Get();
 private:
@@ -173,5 +179,11 @@ private:
 	UINT mPassCbvOffset = 0;
 
 	XMFLOAT3 mEyePos = { 0.0f, 0.0f, 0.0f };
+
+	// 光照 begin
+	
+	std::unordered_map<std::string, std::unique_ptr<Material>> mMaterials;
+
+	// 光照 end
 
 };
