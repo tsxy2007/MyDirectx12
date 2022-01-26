@@ -31,6 +31,8 @@ struct RenderItem
 
 	MeshGeometry* Geo = nullptr; // 此渲染项参与绘制的几何体
 	
+
+	Material* Mat = nullptr;
 };
 
 using Microsoft::WRL::ComPtr;

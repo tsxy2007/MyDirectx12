@@ -50,6 +50,7 @@ void D3DApplication::Update()
 		CloseHandle(eventHandle);
 	}
 	UpdateObjectCBs();
+	UpdateMaterialCBs();
 	UpdateMainPassCB();
 }
 
@@ -211,7 +212,7 @@ void D3DApplication::BuildConstantBuffers()
 void D3DApplication::BuildRootSignature()
 {
 	// 根参数
-	CD3DX12_ROOT_PARAMETER rootParameter[2];
+	CD3DX12_ROOT_PARAMETER rootParameter[3];
 
 	CD3DX12_DESCRIPTOR_RANGE cbvTable;
 	cbvTable.Init(
@@ -229,6 +230,7 @@ void D3DApplication::BuildRootSignature()
 
 	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
 	rootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
+	rootParameter[2].InitAsConstantBufferView(2);
 
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigdesc(
 		_countof(rootParameter), 
@@ -447,6 +449,7 @@ void D3DApplication::BuildRenderItems()
 
 	boxRitem->ObjCBIndex = objCBIndex++;
 	boxRitem->Geo = mGeometries["ShapGeo"].get();
+	boxRitem->Mat = mMaterials["grass"].get();
 	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
@@ -464,7 +467,9 @@ void D3DApplication::BuildRenderItems()
 void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem)
 {
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
 
+	auto matCB = mCurrentFrameResource->MaterialCB->Resource();
 	for (int i = 0; i < ritem.size(); i++)
 	{
 		auto ri = ritem[i];
@@ -477,6 +482,10 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 		auto cbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 		cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
 		cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
+
+		// 通过根描述符添加cbv
+		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
+		cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
 		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
 }
@@ -604,6 +613,8 @@ void D3DApplication::InitDirect3D()
 	BuildShadersAndInputLayout();
 	// 创建模型；
 	BuildBoxGeometry();
+	//
+	BuildMaterials();
 	//
 	BuildRenderItems();
 	//
