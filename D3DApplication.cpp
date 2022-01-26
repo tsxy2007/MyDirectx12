@@ -486,6 +486,8 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 		// 通过根描述符添加cbv
 		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
 		cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
+
+		// 添加绘制命令;
 		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
 }

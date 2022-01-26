@@ -60,6 +60,17 @@ public:
 	);
 };
 
+// 光照
+struct Light
+{
+	DirectX::XMFLOAT3 Strength = { 0.5f,0.5f,0.5f };// 光源的颜色
+	float FalloffStart = 1.f; // 仅供点光源/聚光灯光源使用
+	DirectX::XMFLOAT3 Direction = { 0.f,-1.f,0.f };//仅供方向光源/聚光灯光源使用
+	float FalloffEnd = 10.f; // 仅供点光源/聚光灯光源使用
+	DirectX::XMFLOAT3 Position = { 0.f,0.f,0.f };// // 仅供点光源/聚光灯光源使用
+	float SpotPower = 64.f; //仅供聚光灯光源使用
+};
+
 struct SubmeshGeometry
 {
 	UINT IndexCount = 0;
