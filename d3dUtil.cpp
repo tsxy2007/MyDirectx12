@@ -23,6 +23,7 @@ Microsoft::WRL::ComPtr<ID3DBlob> d3dUtil::CompileShader(const std::wstring& file
 	);
 	if (errors != nullptr)
 	{
+		OutputDebugStringA((char*)errors->GetBufferPointer());
 		return nullptr;
 	}
 	if (hr == S_FALSE)
