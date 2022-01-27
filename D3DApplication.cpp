@@ -185,7 +185,7 @@ void D3DApplication::UpdateMainPassCB()
 	mMainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
 	mMainPassCB.Lights[0].Strength = { 0.6f, 0.6f, 0.6f };
 	mMainPassCB.Lights[1].Direction = { -0.57735f, -0.57735f, 0.57735f };
-	mMainPassCB.Lights[1].Strength = { 0.3f, 0.3f, 0.3f };
+	mMainPassCB.Lights[1].Strength = { 1.f, 0.3f, 0.3f };
 	mMainPassCB.Lights[2].Direction = { 0.0f, -0.707f, -0.707f };
 	mMainPassCB.Lights[2].Strength = { 0.15f, 0.15f, 0.15f };
 
@@ -542,8 +542,8 @@ void D3DApplication::BuildMaterials()
 	grass->Name = "grass";
 	grass->MatCBIndex = 0;
 	grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.2f, 1.f);
-	grass->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	grass->Roughness = 0.3f;
+	grass->FresnelR0 = XMFLOAT3(0.5f, 0.5f, 0.05f);
+	grass->Roughness = 0.1f;
 	mMaterials["grass"] = std::move(grass);
 }
 

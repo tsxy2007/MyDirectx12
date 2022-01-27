@@ -88,10 +88,11 @@ float4 PS(VertexOut pin) : SV_Target
 
     Material mat = { gDiffuseAlbedo, gFresnelR0, shininess };
     float3 shadowFactor = 1.0f;
+    // 漫反射 + 高光
     float4 directLight = ComputeLighting(gLights, mat, pin.PosW, 
         pin.NormalW, toEyeW, shadowFactor);
 
-    float4 litColor = ambient + directLight;
+    float4 litColor = ambient + directLight; // 完整的光照;
 
     litColor.a = gDiffuseAlbedo.a;
 
