@@ -18,6 +18,7 @@ struct RenderItem
 	RenderItem() = default;
 
 	XMFLOAT4X4 World = MathHelper::Identity4x4(); // 物体局部空间相对于世界空间的世界矩阵，位置，朝向，大小
+	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4(); // uv
 
 	int NumFrameDirty = gNumFrameResource; // 更新标记
 

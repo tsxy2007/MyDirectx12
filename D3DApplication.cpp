@@ -86,7 +86,7 @@ void D3DApplication::Draw()
 	auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 	passCbvHandle.Offset(passCbvIndex, mCbvSrvUavDescriptorSize);
 	// 绑定的槽号，cbv句柄
-	mD3DCommandList->SetGraphicsRootDescriptorTable(0, passCbvHandle);
+	mD3DCommandList->SetGraphicsRootDescriptorTable(1, passCbvHandle);
 
 	//绘制命令
 
@@ -109,6 +109,34 @@ void D3DApplication::Draw()
 	mD3DCommandQueue->Signal(mFence.Get(), mCurrentFence);
 }
 
+void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem)
+{
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
+
+	auto matCB = mCurrentFrameResource->MaterialCB->Resource();
+	for (int i = 0; i < ritem.size(); i++)
+	{
+		auto ri = ritem[i];
+
+		cmdList->IASetVertexBuffers(0, 1, get_rvalue_ptr(ri->Geo->VertexBufferView()));
+		cmdList->IASetIndexBuffer(get_rvalue_ptr(ri->Geo->IndexBufferView()));
+		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+		UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mOpaqueRitems.size() + ri->ObjCBIndex;
+		auto cbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+		cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
+		cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
+
+		// 通过根描述符添加cbv
+		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
+		cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
+
+		// 添加绘制命令;
+		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+	}
+}
+
 void D3DApplication::UpdateObjectCBs()
 {
 	auto currObjectCB = mCurrentFrameResource->ObjectCB.get();
@@ -117,8 +145,11 @@ void D3DApplication::UpdateObjectCBs()
 		if (e->NumFrameDirty > 0 )
 		{
 			XMMATRIX world = XMLoadFloat4x4(&e->World);
+			XMMATRIX texTransform = XMLoadFloat4x4(&e->TexTransform);
+
 			ObjectConstants objConstants;
 			XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
+			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
 
 			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
 			e->NumFrameDirty--;
@@ -149,6 +180,14 @@ void D3DApplication::UpdateMainPassCB()
 	mMainPassCB.FarZ = 1000.0f;
 	//mMainPassCB.TotalTime = gt.TotalTime();
 	//mMainPassCB.DeltaTime = gt.DeltaTime();
+
+	mMainPassCB.AmbientLight = { 0.25f,0.25f,0.35f,1.f };
+	mMainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
+	mMainPassCB.Lights[0].Strength = { 0.6f, 0.6f, 0.6f };
+	mMainPassCB.Lights[1].Direction = { -0.57735f, -0.57735f, 0.57735f };
+	mMainPassCB.Lights[1].Strength = { 0.3f, 0.3f, 0.3f };
+	mMainPassCB.Lights[2].Direction = { 0.0f, -0.707f, -0.707f };
+	mMainPassCB.Lights[2].Strength = { 0.15f, 0.15f, 0.15f };
 
 	auto currPassCB = mCurrentFrameResource->PassCB.get();
 	currPassCB->CopyData(0, mMainPassCB);
@@ -274,9 +313,9 @@ void D3DApplication::BuildShadersAndInputLayout()
 void D3DApplication::BuildBoxGeometry()
 {
 
-	float w2 = 0.5f * 5;
-	float h2 = 0.5f * 5;
-	float d2 = 0.5f * 5;
+	float w2 = 0.5f * 1.5f;
+	float h2 = 0.5f * 0.5f;
+	float d2 = 0.5f * 1.5f;
 	//创建顶点
 	std::array<Vertex, 24> vertices =
 	{
@@ -473,6 +512,7 @@ void D3DApplication::BuildRenderItems()
 	UINT objCBIndex = 0;
 	auto boxRitem = std::make_unique<RenderItem>();
 	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixTranslation(0.0f, 0.0f, 0.0f));
+	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.f, 1.f, 1.f));
 
 	boxRitem->ObjCBIndex = objCBIndex++;
 	boxRitem->Geo = mGeometries["ShapGeo"].get();
@@ -491,34 +531,6 @@ void D3DApplication::BuildRenderItems()
 	}
 }
 
-void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem)
-{
-	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
-	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
-
-	auto matCB = mCurrentFrameResource->MaterialCB->Resource();
-	for (int i = 0; i < ritem.size(); i++)
-	{
-		auto ri = ritem[i];
-
-		cmdList->IASetVertexBuffers(0, 1, get_rvalue_ptr(ri->Geo->VertexBufferView()));
-		cmdList->IASetIndexBuffer(get_rvalue_ptr(ri->Geo->IndexBufferView()));
-		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
-
-		UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mOpaqueRitems.size() + ri->ObjCBIndex;
-		auto cbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
-		cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
-		cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
-
-		// 通过根描述符添加cbv
-		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
-		cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
-
-		// 添加绘制命令;
-		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
-	}
-}
-
 float D3DApplication::AspectRatio() const
 {
 	return (float)(mClientWidth/ mClientHeight);
@@ -530,8 +542,8 @@ void D3DApplication::BuildMaterials()
 	grass->Name = "grass";
 	grass->MatCBIndex = 0;
 	grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.2f, 1.f);
-	grass->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	grass->Roughness = 0.125f;
+	grass->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	grass->Roughness = 0.3f;
 	mMaterials["grass"] = std::move(grass);
 }
 

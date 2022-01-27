@@ -1,14 +1,14 @@
 //光源数量的默认值
 #ifndef NUM_DIR_LIGHTS
-#define NUM_DIR_LIGHTS 1
+    #define NUM_DIR_LIGHTS 3
 #endif
 
 #ifndef NUM_POINT_LIGHTS
-#define NUM_POINT_LIGHTS 0
+    #define NUM_POINT_LIGHTS 0
 #endif
 
 #ifndef NUM_SPOT_LIGHTS
-#define NUM_SPOT_LIGHTS 0
+    #define NUM_SPOT_LIGHTS 0
 #endif
 
 #include "LightingUtil.hlsl"
@@ -42,8 +42,8 @@ cbuffer cbPass : register(b1)
     float2 gInvRenderTargetSize;
     float gNearZ;
     float gFarZ;
-//    float gTotalTime;
- //   float gDeltaTime;
+    float gTotalTime;
+    float gDeltaTime;
     float4 gAmbientLight;
     Light gLights[MaxLights];
 };
@@ -63,16 +63,15 @@ struct VertexOut
 
 VertexOut VS(VertexIn vin)
 {
-    VertexOut vout = (VertexOut) 0.f;
+   VertexOut vout = (VertexOut)0.0f;
+	
+    float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
+    vout.PosW = posW.xyz;
 
-    float4 PosW = mul(float4(vin.PosL,1.f),gWorld);
+    vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
 
-    vout.PosW = PosW.xyz;
+    vout.PosH = mul(posW, gViewProj);
 
-    vout.NormalW = mul(vin.NormalL,(float3x3)gWorld);
-
-    vout.PosH = mul(PosW,gViewProj);
-    
     return vout;
 }
 

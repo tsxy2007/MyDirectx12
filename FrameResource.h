@@ -6,6 +6,7 @@
 struct ObjectConstants
 {
 	DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();
+	DirectX::XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 };
 
 struct Vertex
@@ -43,6 +44,9 @@ struct PassConstants
 	float FarZ = 0.0f;
 	float TotalTime = 0.0f;
 	float DeltaTime = 0.0f;
+
+	DirectX::XMFLOAT4 AmbientLight = { 0.f,0.f,0.f,1.f };
+	Light Lights[MaxLights];
 };
 
 class FrameResource

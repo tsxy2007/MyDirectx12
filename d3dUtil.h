@@ -29,6 +29,7 @@
 
 
 const int gNumFrameResource = 3;
+#define MaxLights 16
 
 template<typename T>
 requires(!std::is_lvalue_reference_v<T>)
