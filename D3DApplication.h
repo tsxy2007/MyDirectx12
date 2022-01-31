@@ -184,7 +184,7 @@ private:
 	XMFLOAT3 mEyePos = { 0.0f, 0.0f, 0.0f };
 
 	// 光照 begin
-	
+
 	std::unordered_map<std::string, std::unique_ptr<Material>> mMaterials;
 
 	// 光照 end
