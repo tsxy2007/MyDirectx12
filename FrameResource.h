@@ -25,6 +25,8 @@ struct Vertex
 		Normal(nx, ny, nz),
 		TangentU(tx, ty, tz),
 		TexC(u, v) {}
+
+	Vertex() {}
 };
 
 

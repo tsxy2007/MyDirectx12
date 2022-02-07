@@ -21,12 +21,11 @@
 #include "d3dx12.h"
 #include "MathHelper.h"
 #include <dxgi1_6.h>
-#include "d3dx12.h"
 #include <dxgi1_4.h>
 #include <assert.h>
-
+#include "GeometryGenerator.h"
 #include <type_traits>
-
+#include "DDSTextureLoader.h"
 
 const int gNumFrameResource = 3;
 #define MaxLights 16
@@ -88,6 +87,9 @@ struct Material
 
 	// 本材质的常量缓冲区索引
 	int MatCBIndex = -1;
+
+	// 漫反射纹理在srv堆中的索引
+	int DiffuseSrvHeapIndex = -1;
 
 	// 更新标记。
 	int NumFramesDirty = gNumFrameResource;
@@ -153,4 +155,15 @@ struct MeshGeometry
 		VertexBufferUploader = nullptr;
 		IndexBufferUploader = nullptr;
 	}
+};
+
+
+// 纹理
+struct Texture
+{
+	std::string Name;
+	std::wstring FileName;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> Resource = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> UploadHeap = nullptr;
 };

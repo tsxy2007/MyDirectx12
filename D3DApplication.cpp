@@ -2,6 +2,8 @@
 #include <string>
 #include <vector>
 #include <DirectXColors.h>
+#include "FrameResource.h"
+
 using namespace DirectX;
 void Wchar_tToString(std::string& szDst, wchar_t* wchar)
 {
@@ -76,7 +78,7 @@ void D3DApplication::Draw()
 	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
 
 	// 绑定描述符堆
-	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
+	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get()};
 	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
@@ -131,6 +133,14 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 		// 通过根描述符添加cbv
 		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
 		cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
+
+
+		//纹理
+		int TexIndex = ri->Mat->DiffuseSrvHeapIndex + mTextureCbvOffset;
+		CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+		tex.Offset(TexIndex,mCbvSrvUavDescriptorSize);
+		cmdList->SetGraphicsRootDescriptorTable(0, tex);
+
 
 		// 添加绘制命令;
 		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
@@ -211,18 +221,42 @@ void D3DApplication::UpdateCamera()
 void D3DApplication::BuildDescriptorHeaps()
 {
 	UINT objCount = (UINT)mOpaqueRitems.size();
-
-	UINT numDescriptors = (objCount + 1) * gNumFrameResource;
+	UINT texCount = 1;
+	UINT numDescriptors = (objCount + 1) * gNumFrameResource + 1;
 
 	mPassCbvOffset = objCount * gNumFrameResource;
+	mTextureCbvOffset = (objCount + 1) * gNumFrameResource;
+
 
 	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
 	cbvHeapDesc.NumDescriptors = numDescriptors;
 	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	cbvHeapDesc.NodeMask= 0;
+	cbvHeapDesc.NodeMask = 0;
 
 	mD3DDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&mCbvHeap));
+
+	//D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+	//srvHeapDesc.NumDescriptors = 1;
+	//srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	//srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	//mD3DDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap));
+
+
+	// 如果多个可以hDescriptor.Offset()
+	CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(mCbvHeap->GetCPUDescriptorHandleForHeapStart());
+	hDescriptor.Offset(mTextureCbvOffset, mCbvSrvUavDescriptorSize);
+	auto woodCrateTex = mTextures["woodCrateTex"]->Resource;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; // 在着色器中对纹理进行采样时，它将返回特定纹理坐标处的纹理数据向量。
+	srvDesc.Format = woodCrateTex->GetDesc().Format; //视图格式
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 资源的维数
+	srvDesc.Texture2D.MostDetailedMip = 0; //指定此视图中图像细节最详尽的mipmap层级的索引
+	srvDesc.Texture2D.MipLevels = woodCrateTex->GetDesc().MipLevels; // 此视图的mipmap层级数量，以MostDetailedMip作为起始值。
+	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;//指定可以访问的最小mipmap层级。
+
+	mD3DDevice->CreateShaderResourceView(woodCrateTex.Get(), &srvDesc, hDescriptor);
 }
 
 void D3DApplication::BuildConstantBuffers()
@@ -251,31 +285,38 @@ void D3DApplication::BuildConstantBuffers()
 void D3DApplication::BuildRootSignature()
 {
 	// 根参数
-	CD3DX12_ROOT_PARAMETER rootParameter[3];
+	CD3DX12_ROOT_PARAMETER rootParameter[4];
 
 	CD3DX12_DESCRIPTOR_RANGE cbvTable;
 	cbvTable.Init(
 		D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 
 		1, 
-		0 //绑定的槽号
+		0//绑定的槽号
 	);
-
 	CD3DX12_DESCRIPTOR_RANGE cbvTable1;
 	cbvTable1.Init(
 		D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
 		1,
 		1 //绑定的槽号
 	);
-
+	CD3DX12_DESCRIPTOR_RANGE TexcbvTable;
+	TexcbvTable.Init(
+		D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+		1,
+		0
+	);
 	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
 	rootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
 	rootParameter[2].InitAsConstantBufferView(2);
+	rootParameter[3].InitAsDescriptorTable(1, &TexcbvTable);
+
+	auto staticSamplers = GetStaticSamplers();
 
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigdesc(
 		_countof(rootParameter), 
 		rootParameter, 
-		0, 
-		nullptr, 
+		(UINT)staticSamplers.size(), 
+		staticSamplers.data(), 
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 	ComPtr<ID3DBlob> serializedRootSig = nullptr;
@@ -299,8 +340,8 @@ void D3DApplication::BuildShadersAndInputLayout()
 {
 	HRESULT hr = S_OK;
 
-	mvsByteCode = d3dUtil::CompileShader(L"Shaders\\LightMain.hlsl", nullptr, "VS", "vs_5_1");
-	mpsByteCode = d3dUtil::CompileShader(L"Shaders\\LightMain.hlsl", nullptr, "PS", "ps_5_1");
+	mvsByteCode = d3dUtil::CompileShader(L"Shaders\\LightMain_09.hlsl", nullptr, "VS", "vs_5_1");
+	mpsByteCode = d3dUtil::CompileShader(L"Shaders\\LightMain_09.hlsl", nullptr, "PS", "ps_5_1");
 
 	mInputLayout =
 	{
@@ -308,109 +349,6 @@ void D3DApplication::BuildShadersAndInputLayout()
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
-}
-
-void D3DApplication::BuildBoxGeometry()
-{
-
-	float w2 = 0.5f * 1.5f;
-	float h2 = 0.5f * 0.5f;
-	float d2 = 0.5f * 1.5f;
-	//创建顶点
-	std::array<Vertex, 24> vertices =
-	{
-		Vertex(-w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f),
-		Vertex(-w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f),
-		Vertex(+w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f),
-		Vertex(+w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f),
-
-		Vertex(-w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f),
-		Vertex(+w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f),
-		Vertex(+w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f),
-		Vertex(-w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f),
-
-		Vertex(-w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f),
-		Vertex(-w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f),
-		Vertex(+w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f),
-		Vertex(+w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f),
-
-		Vertex(-w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f),
-		Vertex(+w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f),
-		Vertex(+w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f),
-		Vertex(-w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f),
-
-		Vertex(-w2, -h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f),
-		Vertex(-w2, +h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
-		Vertex(-w2, +h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f),
-		Vertex(-w2, -h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f),
-
-		Vertex(+w2, -h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f),
-		Vertex(+w2, +h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
-		Vertex(+w2, +h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f),
-		Vertex(+w2, -h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f),
-
-	};
-	// 构造索引
-	std::array<std::uint16_t, 36> indices =
-	{
-		// front face
-		0, 1, 2,
-		0, 2, 3,
-
-		// back face
-		4, 6, 5,
-		4, 7, 6,
-
-		// left face
-		4, 5, 1,
-		4, 1, 0,
-
-		// right face
-		3, 2, 6,
-		3, 6, 7,
-
-		// top face
-		1, 5, 6,
-		1, 6, 2,
-
-		// bottom face
-		4, 0, 3,
-		4, 3, 7
-	};
-
-	IndexCount = indices.size();
-	vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-	ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-	
-	std::unique_ptr<MeshGeometry> mBoxGeo = std::make_unique<MeshGeometry>();
-	mBoxGeo->Name = "ShapGeo";
-
-
-	// 顶点默认缓冲区
-	mBoxGeo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),mD3DCommandList.Get(),vertices.data(),
-		vbByteSize, mBoxGeo->VertexBufferUploader);
-
-	// 索引默认缓冲区
-	mBoxGeo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(), mD3DCommandList.Get(), indices.data(),
-		ibByteSize, mBoxGeo->IndexBufferUploader);
-
-	mBoxGeo->VertexBufferByteSize = vbByteSize;
-	mBoxGeo->VertexByteStride = sizeof(Vertex);
-	mBoxGeo->IndexFormat = DXGI_FORMAT_R16_UINT;
-	mBoxGeo->IndexBufferByteSize = ibByteSize;
-
-
-	UINT BoxIndexOffset = 0;
-	UINT BoxVertexOffset = 0;
-
-	SubmeshGeometry subBoxGeo;
-	subBoxGeo.IndexCount = (UINT)IndexCount;
-	subBoxGeo.StartIndexLocation = BoxIndexOffset;
-	subBoxGeo.BaseVertexLocation = BoxVertexOffset;
-
-	mBoxGeo->DrawArgs["box"] = subBoxGeo;
-
-	mGeometries[mBoxGeo->Name] = std::move(mBoxGeo);
 }
 
 void D3DApplication::BuildPSO()
@@ -469,6 +407,7 @@ void D3DApplication::BuildConstantBufferViews()
 
 			cbAddress += j * objCBByteSize;
 			int heapIndex = i * objCount + j;
+			
 			auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(mCbvHeap->GetCPUDescriptorHandleForHeapStart());
 			handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);
 
@@ -482,12 +421,14 @@ void D3DApplication::BuildConstantBufferViews()
 
 	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
 
+	UINT TextIndex = 0;
 	for (int frameIndex = 0; frameIndex < gNumFrameResource; ++frameIndex)
 	{
 		auto passCB = mFrameResource[frameIndex]->PassCB->Resource();
 		D3D12_GPU_VIRTUAL_ADDRESS cbAddress = passCB->GetGPUVirtualAddress();
 
 		int heapIndex = mPassCbvOffset + frameIndex;
+		TextIndex = heapIndex;
 		auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(mCbvHeap->GetCPUDescriptorHandleForHeapStart());
 		handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);
 
@@ -507,12 +448,75 @@ void D3DApplication::BuildFrameResource()
 	}
 }
 
+void D3DApplication::BuildBoxGeometry()
+{
+
+	GeometryGenerator geoGen;
+
+	GeometryGenerator::MeshData box = geoGen.CreateBox(2.0f, 1.0f, 1.0f, 3);
+
+
+	SubmeshGeometry boxSubmesh;
+	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
+	boxSubmesh.StartIndexLocation = 0;
+	boxSubmesh.BaseVertexLocation = 0;
+
+
+	std::vector<Vertex> vertices(box.Verteices.size());
+
+	for (size_t i = 0; i < box.Verteices.size(); ++i)
+	{
+		vertices[i].Position = box.Verteices[i].Position;
+		vertices[i].Normal = box.Verteices[i].Normal;
+		vertices[i].TexC = box.Verteices[i].TexC;
+	}
+
+	std::vector<std::uint16_t> indices = box.GetIndices16();
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "ShapGeo";
+
+	D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU);
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),
+		mD3DCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),
+		mD3DCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	geo->DrawArgs["box"] = boxSubmesh;
+
+	mGeometries[geo->Name] = std::move(geo);
+}
+
+void D3DApplication::BuildMaterials()
+{
+	auto grass = std::make_unique<Material>();
+	grass->Name = "grass";
+	grass->MatCBIndex = 0;
+	grass->DiffuseSrvHeapIndex = 0;
+	grass->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
+	grass->FresnelR0 = XMFLOAT3(0.5f, 0.5f, 0.05f);
+	grass->Roughness = 0.2f;
+	mMaterials["grass"] = std::move(grass);
+}
+
 void D3DApplication::BuildRenderItems()
 {
 	UINT objCBIndex = 0;
 	auto boxRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&boxRitem->World, XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixTranslation(0.0f, 0.0f, 0.0f));
-	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.f, 1.f, 1.f));
 
 	boxRitem->ObjCBIndex = objCBIndex++;
 	boxRitem->Geo = mGeometries["ShapGeo"].get();
@@ -524,7 +528,6 @@ void D3DApplication::BuildRenderItems()
 	mAllRitems.push_back(std::move(boxRitem));
 
 
-
 	for (auto& e : mAllRitems)
 	{
 		mOpaqueRitems.push_back(e.get());
@@ -534,17 +537,6 @@ void D3DApplication::BuildRenderItems()
 float D3DApplication::AspectRatio() const
 {
 	return (float)(mClientWidth/ mClientHeight);
-}
-
-void D3DApplication::BuildMaterials()
-{
-	auto grass = std::make_unique<Material>();
-	grass->Name = "grass";
-	grass->MatCBIndex = 0;
-	grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.2f, 1.f);
-	grass->FresnelR0 = XMFLOAT3(0.5f, 0.5f, 0.05f);
-	grass->Roughness = 0.1f;
-	mMaterials["grass"] = std::move(grass);
 }
 
 void D3DApplication::UpdateMaterialCBs()
@@ -565,6 +557,76 @@ void D3DApplication::UpdateMaterialCBs()
 			mat->NumFramesDirty--;
 		}
 	}
+}
+
+void D3DApplication::LoadTextures()
+{
+	auto woodCrateTex = std::make_unique<Texture>();
+	woodCrateTex->Name = "woodCrateTex";
+	woodCrateTex->FileName = L"Textures/WoodCrate01.dds";
+	DirectX::CreateDDSTextureFromFile12(
+		mD3DDevice.Get(),
+		mD3DCommandList.Get(),
+		woodCrateTex->FileName.c_str(),
+		woodCrateTex->Resource,
+		woodCrateTex->UploadHeap
+	);
+
+	mTextures[woodCrateTex->Name] = std::move(woodCrateTex);
+}
+
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> D3DApplication::GetStaticSamplers()
+{
+	const CD3DX12_STATIC_SAMPLER_DESC pointWrap(
+		0, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC pointClamp(
+		1, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
+		2, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC linearClamp(
+		3, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC anisotropicWrap(
+		4, // shaderRegister
+		D3D12_FILTER_ANISOTROPIC, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressW
+		0.0f,                             // mipLODBias
+		8);                               // maxAnisotropy
+
+	const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(
+		5, // shaderRegister
+		D3D12_FILTER_ANISOTROPIC, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressW
+		0.0f,                              // mipLODBias
+		8);                                // maxAnisotropy
+
+	return {
+		pointWrap, pointClamp,
+		linearWrap, linearClamp,
+		anisotropicWrap, anisotropicClamp };
 }
 
 D3DApplication* D3DApplication::Get()
@@ -648,6 +710,8 @@ void D3DApplication::InitDirect3D()
 
 	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
 
+	//加载图片
+	LoadTextures();
 	//根签名和描述符表
 	BuildRootSignature();
 	//顶点与输入布局

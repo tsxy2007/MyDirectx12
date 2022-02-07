@@ -87,6 +87,13 @@ public:
 
 	void UpdateMaterialCBs();
 	// 光照 end
+
+	// 纹理begin
+	
+	void LoadTextures();
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
+
+	// 纹理end
 public:
 	static D3DApplication* Get();
 private:
@@ -189,4 +196,10 @@ private:
 
 	// 光照 end
 
+
+	// 纹理 begin
+	ComPtr<ID3D12DescriptorHeap> mSrvDescriptorHeap = nullptr;
+	std::unordered_map<std::string, std::unique_ptr<Texture>> mTextures;
+	UINT mTextureCbvOffset = 0;
+	// 纹理 end
 };
