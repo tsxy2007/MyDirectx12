@@ -27,25 +27,28 @@ float CalcAttenuation(float d, float falloffstart, float falloffend)
 // 代替菲涅尔方程的石里克近似
 float3 SchlickFresnel(float3 R0, float3 normal, float3 lightVec)
 {
-	float f0 = 1- saturate(dot(normal, lightVec));
-	return R0 + (1 - R0)*(f0 * f0 * f0 * f0 * f0);
+float cosIncidentAngle = saturate(dot(normal, lightVec));
+
+    float f0 = 1.0f - cosIncidentAngle;
+    float3 reflectPercent = R0 + (1.0f - R0)*(f0*f0*f0*f0*f0);
+
+    return reflectPercent;
 }
 
 // BlinnPhong 光照
 float3 BlinnPhong(float3 lightStrength,float3 lightVec,float3 normal,float3 toEye,Material mat)
 {
-	const float m = mat.Shininess * 256.f; // 粗糙度
+	const float m = mat.Shininess * 256.0f;// 粗糙度
 	float3 halfVec = normalize(toEye + lightVec); // 光线和入眼的中间
 
-	float roughnessFactor = (m+8.f)*pow(max(dot(halfVec,normal),0.f),m) / 8.f; //高光系数
-
-	float3 fresnelFactor = SchlickFresnel(mat.FresnelR0,halfVec,lightVec);
+  	float roughnessFactor = (m + 8.0f)*pow(max(dot(halfVec, normal), 0.0f), m) / 8.0f; //高光系数
+	float3 fresnelFactor = SchlickFresnel(mat.FresnelR0, halfVec, lightVec);
 
 	float3 specAlbedo = fresnelFactor * roughnessFactor;
 
 	specAlbedo = specAlbedo / (specAlbedo + 1.f);
 
-	return (mat.DiffuseAlbedo.rgb + specAlbedo);
+	return (mat.DiffuseAlbedo.rgb + specAlbedo)  * lightStrength;
 }
 
 // 方向光
