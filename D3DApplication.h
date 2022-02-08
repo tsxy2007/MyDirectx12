@@ -177,9 +177,9 @@ private:
 	UINT IndexCount = 0;
 
 	//
-	float mTheta = 1.3f * XM_PI;
-	float mPhi = 0.4f * XM_PI;
-	float mRadius = 2.5f;
+	float mTheta = 1.5f * XM_PI;
+	float mPhi = 0.4 * XM_PI;
+	float mRadius = 5.f;
 
 	// 
 	XMFLOAT4X4 mWorld = MathHelper::Identity4x4();
