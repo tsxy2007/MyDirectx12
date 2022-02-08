@@ -205,11 +205,12 @@ void D3DApplication::UpdateMainPassCB()
 	mMainPassCB.TotalTime = 0;// gt.TotalTime();
 	mMainPassCB.DeltaTime = 0;// gt.DeltaTime();
 
-	mMainPassCB.AmbientLight = { 0.25f,0.25f,0.35f,1.f };
+
+	mMainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
 	mMainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
 	mMainPassCB.Lights[0].Strength = { 0.6f, 0.6f, 0.6f };
 	mMainPassCB.Lights[1].Direction = { -0.57735f, -0.57735f, 0.57735f };
-	mMainPassCB.Lights[1].Strength = { 1.f, 0.3f, 0.3f };
+	mMainPassCB.Lights[1].Strength = { 0.3f, 0.3f, 0.3f };
 	mMainPassCB.Lights[2].Direction = { 0.0f, -0.707f, -0.707f };
 	mMainPassCB.Lights[2].Strength = { 0.15f, 0.15f, 0.15f };
 
@@ -353,7 +354,7 @@ void D3DApplication::BuildRootSignature()
 		0,
 		serializedRootSig->GetBufferPointer(),
 		serializedRootSig->GetBufferSize(),
-		IID_PPV_ARGS(&mRootSignature)
+		IID_PPV_ARGS(mRootSignature.GetAddressOf())
 	);
 }
 
@@ -474,7 +475,7 @@ void D3DApplication::BuildBoxGeometry()
 
 	GeometryGenerator geoGen;
 
-	GeometryGenerator::MeshData box = geoGen.CreateBox(2.0f, 1.0f, 1.0f, 3);
+	GeometryGenerator::MeshData box = geoGen.CreateBox(1.0f, 1.0f, 1.0f, 3);
 
 
 	SubmeshGeometry boxSubmesh;
@@ -528,7 +529,7 @@ void D3DApplication::BuildMaterials()
 	grass->Name = "grass";
 	grass->MatCBIndex = 0;
 	grass->DiffuseSrvHeapIndex = 0;
-	grass->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
+	grass->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	grass->FresnelR0 = XMFLOAT3(0.5f, 0.5f, 0.05f);
 	grass->Roughness = 0.2f;
 	mMaterials["grass"] = std::move(grass);
@@ -569,11 +570,12 @@ void D3DApplication::UpdateMaterialCBs()
 		Material* mat = m.second.get();
 		if (mat->NumFramesDirty > 0)
 		{
+			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
 			MaterialConstants matConstants;
 			matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
 			matConstants.FresnelR0 = mat->FresnelR0;
 			matConstants.Roughness = mat->Roughness;
-
+			XMStoreFloat4x4(&matConstants.MatTransform, XMMatrixTranspose(matTransform));
 			currMaterialCB->CopyData(mat->MatCBIndex, matConstants);
 			mat->NumFramesDirty--;
 		}
@@ -584,14 +586,10 @@ void D3DApplication::LoadTextures()
 {
 	auto woodCrateTex = std::make_unique<Texture>();
 	woodCrateTex->Name = "woodCrateTex";
-	woodCrateTex->FileName = L"Textures/bricks.dds";
-	DirectX::CreateDDSTextureFromFile12(
-		mD3DDevice.Get(),
-		mD3DCommandList.Get(),
-		woodCrateTex->FileName.c_str(),
-		woodCrateTex->Resource,
-		woodCrateTex->UploadHeap
-	);
+	woodCrateTex->FileName = L"Textures/WoodCrate01.dds";
+	DirectX::CreateDDSTextureFromFile12(mD3DDevice.Get(),
+		mD3DCommandList.Get(), woodCrateTex->FileName.c_str(),
+		woodCrateTex->Resource, woodCrateTex->UploadHeap);
 
 	mTextures[woodCrateTex->Name] = std::move(woodCrateTex);
 }
