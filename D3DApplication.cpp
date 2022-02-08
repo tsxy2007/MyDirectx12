@@ -137,9 +137,9 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 
 		//纹理
 		int TexIndex = ri->Mat->DiffuseSrvHeapIndex + mTextureCbvOffset;
-		CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+		auto tex = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 		tex.Offset(TexIndex,mCbvSrvUavDescriptorSize);
-		cmdList->SetGraphicsRootDescriptorTable(0, tex);
+		cmdList->SetGraphicsRootDescriptorTable(3, tex);
 
 
 		// 添加绘制命令;
@@ -308,7 +308,7 @@ void D3DApplication::BuildRootSignature()
 	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
 	rootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
 	rootParameter[2].InitAsConstantBufferView(2);
-	rootParameter[3].InitAsDescriptorTable(1, &TexcbvTable);
+	rootParameter[3].InitAsDescriptorTable(1, &TexcbvTable,D3D12_SHADER_VISIBILITY_PIXEL);
 
 	auto staticSamplers = GetStaticSamplers();
 
