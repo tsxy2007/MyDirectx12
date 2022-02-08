@@ -89,6 +89,8 @@ void D3DApplication::Draw()
 	passCbvHandle.Offset(passCbvIndex, mCbvSrvUavDescriptorSize);
 	// 绑定的槽号，cbv句柄
 	mD3DCommandList->SetGraphicsRootDescriptorTable(1, passCbvHandle);
+	//auto passCB = mCurrentFrameResource->PassCB->Resource();
+	//mD3DCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
 
 	//绘制命令
 
@@ -117,6 +119,7 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
 
 	auto matCB = mCurrentFrameResource->MaterialCB->Resource();
+	auto objectCB = mCurrentFrameResource->ObjectCB->Resource();
 	for (int i = 0; i < ritem.size(); i++)
 	{
 		auto ri = ritem[i];
@@ -125,22 +128,33 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 		cmdList->IASetIndexBuffer(get_rvalue_ptr(ri->Geo->IndexBufferView()));
 		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
 
-		UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mOpaqueRitems.size() + ri->ObjCBIndex;
-		auto cbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
-		cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
-		cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
 
-		// 通过根描述符添加cbv
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize;
 		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
-		cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
+		{
 
+			UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mOpaqueRitems.size() + ri->ObjCBIndex;
+			CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+			cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
+			cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
 
-		//纹理
-		int TexIndex = ri->Mat->DiffuseSrvHeapIndex + mTextureCbvOffset;
-		auto tex = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
-		tex.Offset(TexIndex,mCbvSrvUavDescriptorSize);
-		cmdList->SetGraphicsRootDescriptorTable(3, tex);
+			//cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+		}
 
+		{
+
+			// 通过根描述符添加cbv
+			D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
+			cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
+			//cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
+		}
+		{
+			//纹理
+			int TexIndex = ri->Mat->DiffuseSrvHeapIndex + mTextureCbvOffset;
+			CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+			tex.Offset(TexIndex, mCbvSrvUavDescriptorSize);
+			cmdList->SetGraphicsRootDescriptorTable(3, tex);
+		}
 
 		// 添加绘制命令;
 		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
@@ -188,8 +202,8 @@ void D3DApplication::UpdateMainPassCB()
 	mMainPassCB.InvRenderTargetSize = XMFLOAT2(1.0f / mClientWidth, 1.0f / mClientHeight);
 	mMainPassCB.NearZ = 1.0f;
 	mMainPassCB.FarZ = 1000.0f;
-	//mMainPassCB.TotalTime = gt.TotalTime();
-	//mMainPassCB.DeltaTime = gt.DeltaTime();
+	mMainPassCB.TotalTime = 0;// gt.TotalTime();
+	mMainPassCB.DeltaTime = 0;// gt.DeltaTime();
 
 	mMainPassCB.AmbientLight = { 0.25f,0.25f,0.35f,1.f };
 	mMainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
@@ -226,13 +240,18 @@ void D3DApplication::BuildDescriptorHeaps()
 
 	mPassCbvOffset = objCount * gNumFrameResource;
 	mTextureCbvOffset = (objCount + 1) * gNumFrameResource;
+#if 0
+	{
+		// test
+		numDescriptors = 1;
+		mTextureCbvOffset = 0;
+	}
+#endif
 
-
-	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
 	cbvHeapDesc.NumDescriptors = numDescriptors;
 	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	cbvHeapDesc.NodeMask = 0;
 
 	mD3DDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&mCbvHeap));
 
@@ -307,6 +326,8 @@ void D3DApplication::BuildRootSignature()
 	);
 	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
 	rootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
+	//rootParameter[0].InitAsConstantBufferView(0);
+	//rootParameter[1].InitAsConstantBufferView(1);
 	rootParameter[2].InitAsConstantBufferView(2);
 	rootParameter[3].InitAsDescriptorTable(1, &TexcbvTable,D3D12_SHADER_VISIBILITY_PIXEL);
 
@@ -536,7 +557,7 @@ void D3DApplication::BuildRenderItems()
 
 float D3DApplication::AspectRatio() const
 {
-	return (float)(mClientWidth/ mClientHeight);
+	return static_cast<float>(mClientWidth) / mClientHeight;
 }
 
 void D3DApplication::UpdateMaterialCBs()
@@ -563,7 +584,7 @@ void D3DApplication::LoadTextures()
 {
 	auto woodCrateTex = std::make_unique<Texture>();
 	woodCrateTex->Name = "woodCrateTex";
-	woodCrateTex->FileName = L"Textures/WoodCrate01.dds";
+	woodCrateTex->FileName = L"Textures/bricks.dds";
 	DirectX::CreateDDSTextureFromFile12(
 		mD3DDevice.Get(),
 		mD3DCommandList.Get(),
@@ -727,7 +748,9 @@ void D3DApplication::InitDirect3D()
 	// 创建描述符堆
 	BuildDescriptorHeaps();
 	//创建常量缓冲区
+#if 1
 	BuildConstantBufferViews();
+#endif
 	//创建pso对象
 	BuildPSO();
 

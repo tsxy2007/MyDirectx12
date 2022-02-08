@@ -94,6 +94,17 @@ public:
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
 
 	// 纹理end
+
+
+	int GetClientWidth()
+	{
+		return mClientWidth;
+	}
+
+	int GetClientHeight()
+	{ 
+		return mClientHeight; 
+	}
 public:
 	static D3DApplication* Get();
 private:
@@ -127,7 +138,7 @@ private:
 	bool b4xMassState = false;
 
 	int mClientWidth = 640;
-	int mClientHeight = 400;
+	int mClientHeight = 800;
 
 	DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;

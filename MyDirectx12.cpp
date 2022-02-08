@@ -118,8 +118,15 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
    hInst = hInstance; // Store instance handle in our global variable
 
+   D3DApplication* App = D3DApplication::Get();
+   
+   RECT R = { 0, 0, App->GetClientWidth(), App->GetClientHeight()};
+   AdjustWindowRect(&R, WS_OVERLAPPEDWINDOW, false);
+   int width = R.right - R.left;
+   int height = R.bottom - R.top;
+
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+	   CW_USEDEFAULT, 0, width, height, nullptr, nullptr, hInstance, nullptr);
 
    if (!hWnd)
    {
