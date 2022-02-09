@@ -155,7 +155,12 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 			tex.Offset(TexIndex, mCbvSrvUavDescriptorSize);
 			cmdList->SetGraphicsRootDescriptorTable(3, tex);
 		}
+		//{
+		//	//动态采样器
+		//	cmdList->SetGraphicsRootDescriptorTable(1,
 
+		//		mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		//}
 		// 添加绘制命令;
 		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
@@ -258,7 +263,7 @@ void D3DApplication::BuildDescriptorHeaps()
 
 	//D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
 	//srvHeapDesc.NumDescriptors = 1;
-	//srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	//srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
 	//srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	//mD3DDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap));
 
@@ -277,6 +282,19 @@ void D3DApplication::BuildDescriptorHeaps()
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;//指定可以访问的最小mipmap层级。
 
 	mD3DDevice->CreateShaderResourceView(woodCrateTex.Get(), &srvDesc, hDescriptor);
+
+	//动态采样器描述符
+	//D3D12_SAMPLER_DESC sampleDesc = {};
+	//sampleDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	//sampleDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	//sampleDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	//sampleDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	//sampleDesc.MinLOD = 0;
+	//sampleDesc.MaxLOD = D3D12_FLOAT32_MAX;
+	//sampleDesc.MipLODBias = 0.f;
+	//sampleDesc.MaxAnisotropy = 1;
+	//sampleDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	//mD3DDevice->CreateSampler(&sampleDesc, mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
 void D3DApplication::BuildConstantBuffers()
@@ -325,6 +343,7 @@ void D3DApplication::BuildRootSignature()
 		1,
 		0
 	);
+
 	rootParameter[0].InitAsDescriptorTable(1, &cbvTable);
 	rootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
 	//rootParameter[0].InitAsConstantBufferView(0);
