@@ -47,33 +47,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_MYDIRECTX12));
 
-    MSG msg;
 
-    // Main message loop:
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (PeekMessage(&msg,0,0,0,PM_REMOVE))
-		{
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-        else
-        {
-			if (bPase)
-			{
-				bPase = false;
-				Sleep(100);
-			}
-			else
-            {
-				D3DApplication::Get()->Update();
-				D3DApplication::Get()->Draw();
-                bPase = true;
-            }
-        }
-    }
-
-    return (int) msg.wParam;
+    return D3DApplication::Get()->Run();
 }
 
 

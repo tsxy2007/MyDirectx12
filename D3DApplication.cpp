@@ -3,6 +3,7 @@
 #include <vector>
 #include <DirectXColors.h>
 #include "FrameResource.h"
+#include "windowsx.h"
 
 using namespace DirectX;
 void Wchar_tToString(std::string& szDst, wchar_t* wchar)
@@ -32,12 +33,36 @@ D3DApplication::~D3DApplication()
 
 LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	switch (msg)
+	{
+	case WM_LBUTTONDOWN:
+	case WM_MBUTTONDOWN:
+	case WM_RBUTTONDOWN:
+		OnMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+		return 0;
+	case WM_LBUTTONUP:
+	case WM_MBUTTONUP:
+	case WM_RBUTTONUP:
+		OnMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+		return 0;
+	case WM_MOUSEMOVE:
+		OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+		return 0;
+	case WM_KEYUP:
+		if (wParam == VK_ESCAPE)
+		{
+			PostQuitMessage(0);
+		}
+		return 0;
+	default:
+		break;
+	}
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-void D3DApplication::Update()
+void D3DApplication::Update(const GameTimer& gt)
 {
-	UpdateCamera();
+	UpdateCamera(gt);
 	// 循环往复的获取帧资源数组中的元素;
 	mCurrentFrameResourceIndex = (mCurrentFrameResourceIndex + 1) % gNumFrameResource;
 	mCurrentFrameResource = mFrameResource[mCurrentFrameResourceIndex].get();
@@ -51,16 +76,16 @@ void D3DApplication::Update()
 		WaitForSingleObject(eventHandle, INFINITE);
 		CloseHandle(eventHandle);
 	}
-	UpdateObjectCBs();
-	UpdateMaterialCBs();
-	UpdateMainPassCB();
+	UpdateObjectCBs(gt);
+	UpdateMaterialCBs(gt);
+	UpdateMainPassCB(gt);
 }
 
-void D3DApplication::Draw()
+void D3DApplication::Draw(const GameTimer& gt)
 {
 	auto mCurrentCommandAlloc = mCurrentFrameResource->CmdListAlloc;
 	mCurrentCommandAlloc->Reset();
-	mD3DCommandList->Reset(mCurrentCommandAlloc.Get(), mPSO.Get());
+	mD3DCommandList->Reset(mCurrentCommandAlloc.Get(), mPSOs["opaque"].Get());
 
 
 	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
@@ -73,7 +98,7 @@ void D3DApplication::Draw()
 	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET)));
 
-	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, Colors::LightSteelBlue, 0, nullptr);
+	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, (float*)&mMainPassCB.FogColor, 0, nullptr);
 	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
 
@@ -93,8 +118,13 @@ void D3DApplication::Draw()
 	//mD3DCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
 
 	//绘制命令
+	mD3DCommandList->SetPipelineState(mPSOs["transparent"].Get());
+	DrawRenderItems(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);
 
-	DrawRenderItems(mD3DCommandList.Get(), mOpaqueRitems);
+	DrawRenderItems(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+
+	mD3DCommandList->SetPipelineState(mPSOs["alphaTested"].Get());
+	DrawRenderItems(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::AlphaTested]);
 
 	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT)));
@@ -133,7 +163,7 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
 		{
 
-			UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mOpaqueRitems.size() + ri->ObjCBIndex;
+			UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mAllRitems.size() + ri->ObjCBIndex;
 			CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 			cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
 			cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
@@ -166,7 +196,7 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 	}
 }
 
-void D3DApplication::UpdateObjectCBs()
+void D3DApplication::UpdateObjectCBs(const GameTimer& gt)
 {
 	auto currObjectCB = mCurrentFrameResource->ObjectCB.get();
 	for (auto& e : mAllRitems)
@@ -186,7 +216,7 @@ void D3DApplication::UpdateObjectCBs()
 	}
 }
 
-void D3DApplication::UpdateMainPassCB()
+void D3DApplication::UpdateMainPassCB(const GameTimer& gt)
 {
 	XMMATRIX view = XMLoadFloat4x4(&mView);
 	XMMATRIX proj = XMLoadFloat4x4(&mProj);
@@ -223,13 +253,13 @@ void D3DApplication::UpdateMainPassCB()
 	currPassCB->CopyData(0, mMainPassCB);
 }
 
-void D3DApplication::UpdateCamera()
+void D3DApplication::UpdateCamera(const GameTimer& gt)
 {
-	float x = mRadius * sinf(mPhi) * cosf(mTheta);
-	float z = mRadius * sin(mPhi) * sinf(mTheta);
-	float y = mRadius * cosf(mPhi);
+	mEyePos.x = mRadius * sinf(mPhi) * cosf(mTheta);
+	mEyePos.z = mRadius * sin(mPhi) * sinf(mTheta);
+	mEyePos.y = mRadius * cosf(mPhi);
 
-	XMVECTOR POS = XMVectorSet(x, y, z, 1.f);
+	XMVECTOR POS = XMVectorSet(mEyePos.x, mEyePos.y, mEyePos.z, 1.f);
 	XMVECTOR target = XMVectorZero();
 	XMVECTOR up = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 
@@ -238,11 +268,79 @@ void D3DApplication::UpdateCamera()
 	XMStoreFloat4x4(&mView, view);
 }
 
+int D3DApplication::Run()
+{
+	MSG msg = { 0 };
+	mTimer.Reset();
+
+	while (msg.message != WM_QUIT)
+	{
+		if (PeekMessage(&msg,0,0,0,PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		else
+		{
+			mTimer.Tick();
+			if (!mAppPaused)
+			{
+				Update(mTimer);
+				Draw(mTimer);
+			}
+			else
+			{
+				Sleep(100);
+			}
+		}
+	}
+	
+
+	return (int)msg.wParam;
+}
+
+void D3DApplication::OnMouseDown(WPARAM btnState, int x, int y)
+{
+	mLastMousePos = { x,y };
+	SetCapture(mHWND);
+}
+
+void D3DApplication::OnMouseUp(WPARAM btnState, int x, int y)
+{
+	ReleaseCapture();
+}
+
+void D3DApplication::OnMouseMove(WPARAM btnState, int x, int y)
+{
+	if ((btnState & MK_LBUTTON) != 0)
+	{
+		float dx = XMConvertToRadians(0.25f * static_cast<float>(x - mLastMousePos.x));
+		float dy = XMConvertToRadians(0.25f * static_cast<float>(y - mLastMousePos.y));
+
+		mTheta += dx;
+		mPhi += dy;
+
+		mPhi = MathHelper::Clamp(mPhi, 0.1f, MathHelper::Pi - 0.1f);
+	}
+	else if ((btnState & MK_RBUTTON) != 0)
+	{
+		float dx = 0.2f * static_cast<float>(x - mLastMousePos.x);
+		float dy = 0.2f * static_cast<float>(y - mLastMousePos.y);
+
+		mRadius += dx - dy;
+
+		mRadius = MathHelper::Clamp(mRadius, 5.0f, 150.0f);
+	}
+
+	mLastMousePos.x = x;
+	mLastMousePos.y = y;
+}
+
 void D3DApplication::BuildDescriptorHeaps()
 {
-	UINT objCount = (UINT)mOpaqueRitems.size();
-	UINT texCount = 1;
-	UINT numDescriptors = (objCount + 1) * gNumFrameResource + 1;
+	UINT objCount = (UINT)mAllRitems.size();
+	UINT texCount = 2;
+	UINT numDescriptors = (objCount + 1) * gNumFrameResource + texCount;
 
 	mPassCbvOffset = objCount * gNumFrameResource;
 	mTextureCbvOffset = (objCount + 1) * gNumFrameResource;
@@ -268,20 +366,28 @@ void D3DApplication::BuildDescriptorHeaps()
 	//mD3DDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap));
 
 
+	auto woodCrateTex = mTextures["woodCrateTex"]->Resource;
+	auto grassTex = mTextures["grassTex"]->Resource;
+
 	// 如果多个可以hDescriptor.Offset()
 	CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(mCbvHeap->GetCPUDescriptorHandleForHeapStart());
-	hDescriptor.Offset(mTextureCbvOffset, mCbvSrvUavDescriptorSize);
-	auto woodCrateTex = mTextures["woodCrateTex"]->Resource;
+	
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; // 在着色器中对纹理进行采样时，它将返回特定纹理坐标处的纹理数据向量。
-	srvDesc.Format = woodCrateTex->GetDesc().Format; //视图格式
+	
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 资源的维数
 	srvDesc.Texture2D.MostDetailedMip = 0; //指定此视图中图像细节最详尽的mipmap层级的索引
 	srvDesc.Texture2D.MipLevels = woodCrateTex->GetDesc().MipLevels; // 此视图的mipmap层级数量，以MostDetailedMip作为起始值。
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;//指定可以访问的最小mipmap层级。
 
+	hDescriptor.Offset(mTextureCbvOffset, mCbvSrvUavDescriptorSize); 
+	srvDesc.Format = woodCrateTex->GetDesc().Format; //视图格式
 	mD3DDevice->CreateShaderResourceView(woodCrateTex.Get(), &srvDesc, hDescriptor);
+
+	hDescriptor.Offset(1, mCbvSrvUavDescriptorSize);
+	srvDesc.Format = grassTex->GetDesc().Format;
+	mD3DDevice->CreateShaderResourceView(grassTex.Get(), &srvDesc, hDescriptor);
 
 	//动态采样器描述符
 	//D3D12_SAMPLER_DESC sampleDesc = {};
@@ -381,8 +487,23 @@ void D3DApplication::BuildShadersAndInputLayout()
 {
 	HRESULT hr = S_OK;
 
-	mvsByteCode = d3dUtil::CompileShader(L"Shaders\\LightMain_09.hlsl", nullptr, "VS", "vs_5_1");
-	mpsByteCode = d3dUtil::CompileShader(L"Shaders\\LightMain_09.hlsl", nullptr, "PS", "ps_5_1");
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"FOG","1",
+		NULL,NULL
+	};
+
+	const D3D_SHADER_MACRO alphaTestDefines[] =
+	{
+		"FOG","1",
+		"ALPHA_TEST","1",
+		NULL,NULL
+	};
+
+	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\BlendMain_10.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\BlendMain_10.hlsl", defines, "PS", "ps_5_1");
+	mShaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\BlendMain_10.hlsl", alphaTestDefines, "PS", "ps_5_1");
+	
 
 	mInputLayout =
 	{
@@ -400,13 +521,13 @@ void D3DApplication::BuildPSO()
 	psoDesc.InputLayout = { mInputLayout.data(),(UINT)mInputLayout.size() };
 	psoDesc.pRootSignature = mRootSignature.Get();
 	psoDesc.VS = {
-		reinterpret_cast<BYTE*>(mvsByteCode->GetBufferPointer()),
-		mvsByteCode->GetBufferSize()
+		reinterpret_cast<BYTE*>(mShaders["standardVS"]->GetBufferPointer()),
+		mShaders["standardVS"]->GetBufferSize()
 	};
 
 	psoDesc.PS = {
-		reinterpret_cast<BYTE*>(mpsByteCode->GetBufferPointer()),
-		mpsByteCode->GetBufferSize()
+		reinterpret_cast<BYTE*>(mShaders["opaquePS"]->GetBufferPointer()),
+		mShaders["opaquePS"]->GetBufferSize()
 	};
 	// 光栅器
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
@@ -429,7 +550,36 @@ void D3DApplication::BuildPSO()
 	// 深度/模板缓冲区的格式
 	psoDesc.DSVFormat = mDepthStencilFormat;
 	//创建pso 对象
-	mD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSO)); 
+	mD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSOs["opaque"]));
+
+	// 透明pso
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPsoDesc = psoDesc;
+
+	D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
+	transparencyBlendDesc.BlendEnable = true;
+	transparencyBlendDesc.LogicOpEnable = false;
+	transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+	transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+	transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+	transparencyBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	transparencyBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
+	transparencyBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	
+	transparentPsoDesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
+	mD3DDevice->CreateGraphicsPipelineState(&transparentPsoDesc, IID_PPV_ARGS(&mPSOs["transparent"]));
+
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestedPsoDesc = psoDesc;
+	alphaTestedPsoDesc.PS = {
+		reinterpret_cast<BYTE*>(mShaders["alphaTestedPS"]->GetBufferPointer()),
+		mShaders["alphaTestedPS"]->GetBufferSize()
+	};
+	alphaTestedPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+	mD3DDevice->CreateGraphicsPipelineState(&transparentPsoDesc, IID_PPV_ARGS(&mPSOs["alphaTested"]));
 }
 
 void D3DApplication::BuildConstantBufferViews()
@@ -437,7 +587,7 @@ void D3DApplication::BuildConstantBufferViews()
 	// 计算常量缓冲区大小;
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
 	// 绘制元素个数;
-	UINT objCount = (UINT)mOpaqueRitems.size();
+	UINT objCount = (UINT)mAllRitems.size();
 
 	for (size_t i = 0; i < gNumFrameResource; i++)
 	{
@@ -494,7 +644,7 @@ void D3DApplication::BuildBoxGeometry()
 
 	GeometryGenerator geoGen;
 
-	GeometryGenerator::MeshData box = geoGen.CreateBox(1.0f, 1.0f, 1.0f, 3);
+	GeometryGenerator::MeshData box = geoGen.CreateBox(8.0f, 8.0f, 8.0f, 3);
 
 
 	SubmeshGeometry boxSubmesh;
@@ -542,33 +692,109 @@ void D3DApplication::BuildBoxGeometry()
 	mGeometries[geo->Name] = std::move(geo);
 }
 
+void D3DApplication::BuildGridGeometry()
+{
+	GeometryGenerator geoGen;
+
+	GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.0f, 160.0f, 50, 50);
+
+
+	std::vector<Vertex> vertices(grid.Verteices.size());
+	for (size_t i = 0; i < grid.Verteices.size(); ++i)
+	{
+		auto& p = grid.Verteices[i].Position;
+		vertices[i].Position = p;
+		vertices[i].Position.y = GetHillsHeight(p.x, p.z);
+		vertices[i].Normal = GetHillsNormal(p.x, p.z);
+		vertices[i].TexC = grid.Verteices[i].TexC;
+	}
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+
+	std::vector<std::uint16_t> indices = grid.GetIndices16();
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "landGeo";
+
+	D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU);
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU);
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),
+		mD3DCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),
+		mD3DCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["grid"] = submesh;
+
+	mGeometries["landGeo"] = std::move(geo);
+}
+
 void D3DApplication::BuildMaterials()
 {
 	auto grass = std::make_unique<Material>();
 	grass->Name = "grass";
 	grass->MatCBIndex = 0;
-	grass->DiffuseSrvHeapIndex = 0;
+	grass->DiffuseSrvHeapIndex = 1;
 	grass->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	grass->FresnelR0 = XMFLOAT3(0.5f, 0.5f, 0.05f);
-	grass->Roughness = 0.2f;
+	grass->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	grass->Roughness = 0.125f;
+
+
+	auto wirefence = std::make_unique<Material>();
+	wirefence->Name = "wirefence";
+	wirefence->MatCBIndex = 1;
+	wirefence->DiffuseSrvHeapIndex = 0;
+	wirefence->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 0.5f);
+	wirefence->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	wirefence->Roughness = 0.f;
+
+
 	mMaterials["grass"] = std::move(grass);
+	mMaterials["wirefence"] = std::move(wirefence);
 }
 
 void D3DApplication::BuildRenderItems()
 {
 	UINT objCBIndex = 0;
 	auto boxRitem = std::make_unique<RenderItem>();
-
+	XMStoreFloat4x4(&boxRitem->World, XMMatrixTranslation(0.0f, 5.0f, 0.0f));
 	boxRitem->ObjCBIndex = objCBIndex++;
 	boxRitem->Geo = mGeometries["ShapGeo"].get();
-	boxRitem->Mat = mMaterials["grass"].get();
+	boxRitem->Mat = mMaterials["wirefence"].get();
 	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
 	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
+	mRitemLayer[(int)RenderLayer::AlphaTested].push_back(boxRitem.get());
+
+	auto gridRitem = std::make_unique<RenderItem>();
+	gridRitem->ObjCBIndex = objCBIndex++;
+	gridRitem->Mat = mMaterials["grass"].get();
+	gridRitem->Geo = mGeometries["landGeo"].get();
+	gridRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
+	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
+	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
+	
+	mRitemLayer[(int)RenderLayer::Transparent].push_back(gridRitem.get());
+
 	mAllRitems.push_back(std::move(boxRitem));
-
-
+	mAllRitems.push_back(std::move(gridRitem));
 	for (auto& e : mAllRitems)
 	{
 		mOpaqueRitems.push_back(e.get());
@@ -580,7 +806,7 @@ float D3DApplication::AspectRatio() const
 	return static_cast<float>(mClientWidth) / mClientHeight;
 }
 
-void D3DApplication::UpdateMaterialCBs()
+void D3DApplication::UpdateMaterialCBs(const GameTimer& gt)
 {
 	auto currMaterialCB = mCurrentFrameResource->MaterialCB.get();
 
@@ -605,12 +831,20 @@ void D3DApplication::LoadTextures()
 {
 	auto woodCrateTex = std::make_unique<Texture>();
 	woodCrateTex->Name = "woodCrateTex";
-	woodCrateTex->FileName = L"Textures/WoodCrate01.dds";
+	woodCrateTex->FileName = L"Textures/WireFence.dds";
 	DirectX::CreateDDSTextureFromFile12(mD3DDevice.Get(),
 		mD3DCommandList.Get(), woodCrateTex->FileName.c_str(),
 		woodCrateTex->Resource, woodCrateTex->UploadHeap);
 
+	auto grassTex = std::make_unique<Texture>();
+	grassTex->Name = "grassTex";
+	grassTex->FileName = L"Textures/grass.dds";
+	DirectX::CreateDDSTextureFromFile12(mD3DDevice.Get(),
+		mD3DCommandList.Get(), grassTex->FileName.c_str(),
+		grassTex->Resource, grassTex->UploadHeap);
+
 	mTextures[woodCrateTex->Name] = std::move(woodCrateTex);
+	mTextures[grassTex->Name] = std::move(grassTex);
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> D3DApplication::GetStaticSamplers()
@@ -756,6 +990,7 @@ void D3DApplication::InitDirect3D()
 	BuildShadersAndInputLayout();
 	// 创建模型；
 	BuildBoxGeometry();
+	BuildGridGeometry();
 	//
 	BuildMaterials();
 	//
@@ -844,6 +1079,24 @@ void D3DApplication::LogOutputDisplayModes(IDXGIOutput* output, DXGI_FORMAT form
 
 		::OutputDebugString(text.c_str());
 	}
+}
+
+float D3DApplication::GetHillsHeight(float x, float z) const
+{
+	return 0.3f * (z * sinf(0.1f * x) + x * cosf(0.1f * z));
+}
+
+DirectX::XMFLOAT3 D3DApplication::GetHillsNormal(float x, float z) const
+{
+	XMFLOAT3 n(
+		-0.03f * z * cosf(0.1f * x) - 0.3f * cosf(0.1f * z),
+		1.0f,
+		-0.3f * sinf(0.1f * x) + 0.03f * x * sinf(0.1f * z));
+
+	XMVECTOR unitNormal = XMVector3Normalize(XMLoadFloat3(&n));
+	XMStoreFloat3(&n, unitNormal);
+
+	return n;
 }
 
 void D3DApplication::CreateCommandObjects()

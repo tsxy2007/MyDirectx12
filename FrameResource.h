@@ -35,6 +35,12 @@ struct PassConstants
 	float DeltaTime = 0.0f;
 
 	DirectX::XMFLOAT4 AmbientLight = { 0.f,0.f,0.f,1.f };
+
+	// fog
+	DirectX::XMFLOAT4 FogColor = { 0.7f, 0.7f, 0.7f, 1.0f };
+	float gFogStart = 2.0f;
+	float gFogRange = 150.0f;
+	DirectX::XMFLOAT2 cbPerObjectPad2;
 	Light Lights[MaxLights];
 };
 

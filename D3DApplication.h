@@ -8,10 +8,18 @@
 #include "d3dUtil.h"
 #include "UploadBuffer.h"
 #include "FrameResource.h"
+#include "GameTimer.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
+enum class RenderLayer : int
+{
+	Opaque = 0,
+	Transparent,
+	AlphaTested,
+	Count
+};
 
 struct RenderItem 
 {
@@ -46,13 +54,20 @@ public:
 	virtual void InitInstance(HINSTANCE InInstance, HWND inHWND);
 	virtual void InitDirect3D();
 	virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-	virtual void Update();
-	virtual void Draw();
+	virtual void Update(const GameTimer& gt);
+	virtual void Draw(const GameTimer& gt);
 
-	void UpdateObjectCBs();
-	void UpdateMainPassCB();
-	void UpdateCamera();
+	void UpdateObjectCBs(const GameTimer& gt);
+	void UpdateMainPassCB(const GameTimer& gt);
+	void UpdateCamera(const GameTimer& gt);
 
+
+	int Run();
+
+
+	void OnMouseDown(WPARAM btnState, int x, int y);
+	void OnMouseUp(WPARAM btnState, int x, int y);
+	void OnMouseMove(WPARAM btnState, int x, int y);
 protected:
 	void CreateCommandObjects();
 	void CreateSwapChain();
@@ -69,6 +84,7 @@ public:
 	void BuildRootSignature();
 	void BuildShadersAndInputLayout();
 	void BuildBoxGeometry();
+	void BuildGridGeometry();
 	void BuildPSO();
 	// CBV
 	void BuildConstantBufferViews();
@@ -85,7 +101,7 @@ public:
 	
 	void BuildMaterials();
 
-	void UpdateMaterialCBs();
+	void UpdateMaterialCBs(const GameTimer& gt);
 	// 光照 end
 
 	// 纹理begin
@@ -111,6 +127,9 @@ private:
 	void LogAdapters();   
 	void LogAdapterOutputs(IDXGIAdapter* adapter);
 	void LogOutputDisplayModes(IDXGIOutput* output, DXGI_FORMAT format);
+
+	float GetHillsHeight(float x, float z)const;
+	XMFLOAT3 GetHillsNormal(float x, float z)const;
 private:
 	//ComPtr<ID3D12Device*> mDevice;
 	HINSTANCE mInstance = nullptr;
@@ -172,6 +191,10 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferGPU = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12Resource> IndexUploadBuffer = nullptr;
 
+	// pso
+	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> mPSOs;
+	std::unordered_map<std::string, ComPtr<ID3DBlob>>			 mShaders;
+
 	UINT vbByteSize = 0;
 	UINT ibByteSize = 0;
 	UINT IndexCount = 0;
@@ -196,6 +219,8 @@ private:
 	std::vector<std::unique_ptr<RenderItem>> mAllRitems;
 	std::vector<RenderItem*> mOpaqueRitems;
 
+	std::vector<RenderItem*> mRitemLayer[(int)RenderLayer::Count];
+
 	PassConstants mMainPassCB;
 	UINT mPassCbvOffset = 0;
 
@@ -213,4 +238,9 @@ private:
 	std::unordered_map<std::string, std::unique_ptr<Texture>> mTextures;
 	UINT mTextureCbvOffset = 0;
 	// 纹理 end
+
+	// game time
+	GameTimer mTimer;
+	bool mAppPaused = false;
+	POINT mLastMousePos;
 };
