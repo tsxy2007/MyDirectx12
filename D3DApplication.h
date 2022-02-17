@@ -18,7 +18,9 @@ enum class RenderLayer : int
 	Opaque = 0,
 	Transparent,
 	AlphaTested,
-	Count
+	Reflected,
+	Mirrors,
+	Count,
 };
 
 struct RenderItem 
@@ -80,18 +82,23 @@ protected:
 
 public:
 	void BuildDescriptorHeaps();
+	void BuildDescriptorHeaps_Stencil();
 	void BuildConstantBuffers();
 	void BuildRootSignature();
 	void BuildShadersAndInputLayout();
 	void BuildBoxGeometry();
 	void BuildGridGeometry();
+	void BuildRoomGeometry();
+	void BuildSkullGeometry();
 	void BuildPSO();
+	void BuildPSOs_Stencil();
 	// CBV
 	void BuildConstantBufferViews();
 	// 创建FrameResource
 	void BuildFrameResource();
 	//
 	void BuildRenderItems();
+	void BuildRenderItems_Stencil();
 	// 绘制每个item
 	void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
 
@@ -100,6 +107,7 @@ public:
 	// 光照begin
 	
 	void BuildMaterials();
+	void BuildMaterials_Stencil(); // 模板
 
 	void UpdateMaterialCBs(const GameTimer& gt);
 	// 光照 end
@@ -243,4 +251,7 @@ private:
 	GameTimer mTimer;
 	bool mAppPaused = false;
 	POINT mLastMousePos;
+
+	RenderItem* mSkullRitem = nullptr;
+	RenderItem* mReflectedSkullRitem = nullptr;
 };
