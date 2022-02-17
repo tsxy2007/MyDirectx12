@@ -237,8 +237,8 @@ void D3DApplication::UpdateMainPassCB(const GameTimer& gt)
 	mMainPassCB.InvRenderTargetSize = XMFLOAT2(1.0f / mClientWidth, 1.0f / mClientHeight);
 	mMainPassCB.NearZ = 1.0f;
 	mMainPassCB.FarZ = 1000.0f;
-	mMainPassCB.TotalTime = 0;// gt.TotalTime();
-	mMainPassCB.DeltaTime = 0;// gt.DeltaTime();
+	mMainPassCB.TotalTime = gt.TotalTime();
+	mMainPassCB.DeltaTime = gt.DeltaTime();
 
 
 	mMainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
@@ -715,12 +715,12 @@ void D3DApplication::BuildPSOs_Stencil()
 	reflectionDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 	reflectionDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 	reflectionDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	reflectionDSS.FrontFace.StencilPassOp = D3D12_COMPARISON_FUNC_EQUAL;
+	reflectionDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
 
 	reflectionDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 	reflectionDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 	reflectionDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	reflectionDSS.BackFace.StencilPassOp = D3D12_COMPARISON_FUNC_EQUAL;
+	reflectionDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionPsoDesc = opaquePsoDesc;
 	drawReflectionPsoDesc.DepthStencilState = reflectionDSS;
