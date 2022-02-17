@@ -682,7 +682,7 @@ void D3DApplication::BuildPSOs_Stencil()
 	
 	D3D12_DEPTH_STENCIL_DESC mirrorDSS;
 	mirrorDSS.DepthEnable = true;
-	mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO; //禁止写入深度缓冲区
 	mirrorDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
 	mirrorDSS.StencilEnable = true;
 	mirrorDSS.StencilReadMask = 0xff;
@@ -690,8 +690,43 @@ void D3DApplication::BuildPSOs_Stencil()
 
 	mirrorDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 	mirrorDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+	mirrorDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	
+	mirrorDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+	mirrorDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPsoDesc = opaquePsoDesc;
+	markMirrorsPsoDesc.BlendState = mirrorBlendState;
+	markMirrorsPsoDesc.DepthStencilState = mirrorDSS;
+	mD3DDevice->CreateGraphicsPipelineState(&markMirrorsPsoDesc, IID_PPV_ARGS(&mPSOs["markStencilMirrors"]));
 
 
+	D3D12_DEPTH_STENCIL_DESC reflectionDSS;
+	reflectionDSS.DepthEnable = true;
+	reflectionDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	reflectionDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	reflectionDSS.StencilEnable = true;
+	reflectionDSS.StencilWriteMask = 0xff;
+	reflectionDSS.StencilReadMask = 0xff;
+
+	reflectionDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	reflectionDSS.FrontFace.StencilPassOp = D3D12_COMPARISON_FUNC_EQUAL;
+
+	reflectionDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	reflectionDSS.BackFace.StencilPassOp = D3D12_COMPARISON_FUNC_EQUAL;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionPsoDesc = opaquePsoDesc;
+	drawReflectionPsoDesc.DepthStencilState = reflectionDSS;
+	drawReflectionPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	drawReflectionPsoDesc.RasterizerState.FrontCounterClockwise = true;
+	mD3DDevice->CreateGraphicsPipelineState(&drawReflectionPsoDesc, IID_PPV_ARGS(&mPSOs["drawStencilReflections"]));
 }
 
 void D3DApplication::BuildConstantBufferViews()
