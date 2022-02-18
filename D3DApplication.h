@@ -58,11 +58,14 @@ public:
 	virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 	virtual void Update(const GameTimer& gt);
 	virtual void Draw(const GameTimer& gt);
+	virtual void Draw_Stencil(const GameTimer& gt);
 
 	void UpdateObjectCBs(const GameTimer& gt);
 	void UpdateMainPassCB(const GameTimer& gt);
 	void UpdateCamera(const GameTimer& gt);
+	void UpdateReflectedPassCB(const GameTimer& gt);
 
+	void OnKeyboardInput(const GameTimer& gt);
 
 	int Run();
 
@@ -85,6 +88,7 @@ public:
 	void BuildDescriptorHeaps_Stencil();
 	void BuildConstantBuffers();
 	void BuildRootSignature();
+	void BuildRootSignature_Stencil();
 	void BuildShadersAndInputLayout();
 	void BuildBoxGeometry();
 	void BuildGridGeometry();
@@ -101,6 +105,7 @@ public:
 	void BuildRenderItems_Stencil();
 	// 绘制每个item
 	void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
+	void DrawRenderItems_Stencil(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
 
 	float     AspectRatio()const;
 
@@ -115,6 +120,7 @@ public:
 	// 纹理begin
 	
 	void LoadTextures();
+	void LoadTextures_Stencil();
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
 
 	// 纹理end
@@ -230,6 +236,7 @@ private:
 	std::vector<RenderItem*> mRitemLayer[(int)RenderLayer::Count];
 
 	PassConstants mMainPassCB;
+	PassConstants mReflectedPassCB;
 	UINT mPassCbvOffset = 0;
 
 	XMFLOAT3 mEyePos = { 0.0f, 0.0f, 0.0f };
@@ -254,4 +261,7 @@ private:
 
 	RenderItem* mSkullRitem = nullptr;
 	RenderItem* mReflectedSkullRitem = nullptr;
+
+	XMFLOAT3 mSkullTranslation = { 0.f,1.f,-5.f };
+
 };

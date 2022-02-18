@@ -23,6 +23,12 @@ public:
 		return x < low ? low : (x > high ? high : x);
 	}
 
+	template<typename T>
+	static T Max(const T& a, const T& b)
+	{
+		return a > b ? a : b;
+	}
+
 	static const float Pi;
 };
 

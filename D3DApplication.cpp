@@ -62,6 +62,7 @@ LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 void D3DApplication::Update(const GameTimer& gt)
 {
+	OnKeyboardInput(gt);
 	UpdateCamera(gt);
 	// 循环往复的获取帧资源数组中的元素;
 	mCurrentFrameResourceIndex = (mCurrentFrameResourceIndex + 1) % gNumFrameResource;
@@ -79,6 +80,7 @@ void D3DApplication::Update(const GameTimer& gt)
 	UpdateObjectCBs(gt);
 	UpdateMaterialCBs(gt);
 	UpdateMainPassCB(gt);
+	UpdateReflectedPassCB(gt);
 }
 
 void D3DApplication::Draw(const GameTimer& gt)
@@ -94,7 +96,7 @@ void D3DApplication::Draw(const GameTimer& gt)
 
 	auto TmpCurrentBackBuffer = CurrentBackBuffer();
 	auto TmpCurrentBackBufferView = CurrentBackBufferView();
-	auto TmpDepthStencilView = DepthStencilView(); 
+	auto TmpDepthStencilView = DepthStencilView();
 	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET)));
 
@@ -103,7 +105,7 @@ void D3DApplication::Draw(const GameTimer& gt)
 	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
 
 	// 绑定描述符堆
-	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get()};
+	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
 	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
@@ -135,7 +137,74 @@ void D3DApplication::Draw(const GameTimer& gt)
 
 	mSpwapChain->Present(0, 0);
 	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
-	
+
+	// 添加围栏值,将命令标记到此围栏点;
+	mCurrentFrameResource->Fence = ++mCurrentFence;
+	// 向命令队列添加一条指令来设置一个新的围栏点
+	// 由于当前的GPU正在执行绘制命令,所以在GPU处理完Signal()函数之前的所有命令以前，并不会设置此新的围栏点。
+	mD3DCommandQueue->Signal(mFence.Get(), mCurrentFence);
+}
+
+void D3DApplication::Draw_Stencil(const GameTimer& gt)
+{
+	auto mCurrentCommandAlloc = mCurrentFrameResource->CmdListAlloc;
+	mCurrentCommandAlloc->Reset();
+	mD3DCommandList->Reset(mCurrentCommandAlloc.Get(), mPSOs["opaque"].Get());
+
+
+	mD3DCommandList->RSSetViewports(1, &mScreenViewport);
+	mD3DCommandList->RSSetScissorRects(1, &mScissorRect);
+
+
+	auto TmpCurrentBackBuffer = CurrentBackBuffer();
+	auto TmpCurrentBackBufferView = CurrentBackBufferView();
+	auto TmpDepthStencilView = DepthStencilView();
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET)));
+
+	mD3DCommandList->ClearRenderTargetView(TmpCurrentBackBufferView, (float*)&mMainPassCB.FogColor, 0, nullptr);
+	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
+
+	// 绑定描述符堆
+	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
+	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+
+
+	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
+
+	auto passCB = mCurrentFrameResource->PassCB->Resource();
+	mD3DCommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
+	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+
+	mD3DCommandList->OMSetStencilRef(1);
+	mD3DCommandList->SetPipelineState(mPSOs["markStencilMirrors"].Get());
+	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Mirrors]);
+
+	D3D12_GPU_VIRTUAL_ADDRESS ReflectionPassCbAddress = passCB->GetGPUVirtualAddress() + 1 * passCBByteSize;
+	mD3DCommandList->SetGraphicsRootConstantBufferView(2, ReflectionPassCbAddress);
+	mD3DCommandList->SetPipelineState(mPSOs["drawStencilReflections"].Get());
+	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Reflected]);
+
+	mD3DCommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
+
+	mD3DCommandList->OMSetStencilRef(0);
+
+
+	mD3DCommandList->SetPipelineState(mPSOs["transparent"].Get());
+	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);
+
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
+		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT)));
+	mD3DCommandList->Close();
+
+	ID3D12CommandList* cmdLists[] = { mD3DCommandList.Get() };
+	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);
+
+	mSpwapChain->Present(0, 0);
+	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+
 	// 添加围栏值,将命令标记到此围栏点;
 	mCurrentFrameResource->Fence = ++mCurrentFence;
 	// 向命令队列添加一条指令来设置一个新的围栏点
@@ -191,6 +260,39 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 
 		//		mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 		//}
+		// 添加绘制命令;
+		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+	}
+}
+
+void D3DApplication::DrawRenderItems_Stencil(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem)
+{
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
+
+	auto matCB = mCurrentFrameResource->MaterialCB->Resource();
+	auto objectCB = mCurrentFrameResource->ObjectCB->Resource();
+	for (int i = 0; i < ritem.size(); i++)
+	{
+		auto ri = ritem[i];
+
+		cmdList->IASetVertexBuffers(0, 1, get_rvalue_ptr(ri->Geo->VertexBufferView()));
+		cmdList->IASetIndexBuffer(get_rvalue_ptr(ri->Geo->IndexBufferView()));
+		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize;
+		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
+		
+		cmdList->SetGraphicsRootConstantBufferView(1, objCBAddress);
+		cmdList->SetGraphicsRootConstantBufferView(3, matCBAddress);
+		{
+			//纹理
+			int TexIndex = ri->Mat->DiffuseSrvHeapIndex + mTextureCbvOffset;
+			CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+			tex.Offset(TexIndex, mCbvSrvUavDescriptorSize);
+			cmdList->SetGraphicsRootDescriptorTable(0, tex);
+		}
 		// 添加绘制命令;
 		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
@@ -268,6 +370,62 @@ void D3DApplication::UpdateCamera(const GameTimer& gt)
 	XMStoreFloat4x4(&mView, view); 
 }
 
+void D3DApplication::UpdateReflectedPassCB(const GameTimer& gt)
+{
+	mReflectedPassCB = mMainPassCB;
+
+	XMVECTOR mirrorPlane = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+	XMMATRIX R = XMMatrixReflect(mirrorPlane);
+
+	for (int i = 0; i < 3; i++)
+	{
+		XMVECTOR lightDir = XMLoadFloat3(&mMainPassCB.Lights[i].Direction);
+		XMVECTOR reflectedLighDir = XMVector3TransformNormal(lightDir, R);
+		XMStoreFloat3(&mReflectedPassCB.Lights[i].Direction, reflectedLighDir);
+	}
+
+	auto currPassCB = mCurrentFrameResource->PassCB.get();
+	currPassCB->CopyData(1, mReflectedPassCB);
+}
+
+void D3DApplication::OnKeyboardInput(const GameTimer& gt)
+{
+	const float dt = gt.DeltaTime();
+
+	if (GetAsyncKeyState('A') & 0x8000)
+	{
+		mSkullTranslation.x -= 1.f * dt;
+	}
+	else if(GetAsyncKeyState('D') & 0x8000)
+	{
+		mSkullTranslation.x += 1.f * dt;
+	}
+	else if (GetAsyncKeyState('W') & 0x8000)
+	{
+		mSkullTranslation.y -= 1.f * dt;
+	}
+	else if (GetAsyncKeyState('S') & 0x8000)
+	{
+		mSkullTranslation.y += 1.f * dt;
+	}
+
+	mSkullTranslation.y = MathHelper::Max(mSkullTranslation.y, 0.f);
+
+	XMMATRIX skullRotate = XMMatrixRotationY(0.5f * MathHelper::Pi);
+	XMMATRIX skullScale = XMMatrixScaling(0.45f, 0.45f, 0.45f);
+	XMMATRIX skullOffset = XMMatrixTranslation(mSkullTranslation.x, mSkullTranslation.y, mSkullTranslation.z);
+
+	XMMATRIX skullWorld = skullRotate * skullScale * skullOffset;
+	XMStoreFloat4x4(&mSkullRitem->World, skullWorld);
+
+	XMVECTOR mirrorPlane = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+	XMMATRIX R = XMMatrixReflect(mirrorPlane);
+	XMStoreFloat4x4(&mReflectedSkullRitem->World, skullWorld * R);
+
+	mSkullRitem->NumFrameDirty = gNumFrameResource;
+	mReflectedSkullRitem->NumFrameDirty = gNumFrameResource;
+}
+
 int D3DApplication::Run()
 {
 	MSG msg = { 0 };
@@ -286,7 +444,11 @@ int D3DApplication::Run()
 			if (!mAppPaused)
 			{
 				Update(mTimer);
+#if 0
 				Draw(mTimer);
+#else
+				Draw_Stencil(mTimer);
+#endif
 			}
 			else
 			{
@@ -405,15 +567,11 @@ void D3DApplication::BuildDescriptorHeaps()
 
 void D3DApplication::BuildDescriptorHeaps_Stencil()
 {
-	UINT objCount = (UINT)mAllRitems.size();
 	UINT texCount = 4;
-	UINT numDescriptors = (objCount + 1) * gNumFrameResource + texCount;
-
-	mPassCbvOffset = objCount * gNumFrameResource;
-	mTextureCbvOffset = (objCount + 1) * gNumFrameResource;
+	mTextureCbvOffset = 0;
 
 	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
-	cbvHeapDesc.NumDescriptors = numDescriptors;
+	cbvHeapDesc.NumDescriptors = texCount;
 	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -436,7 +594,6 @@ void D3DApplication::BuildDescriptorHeaps_Stencil()
 	srvDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels; // 此视图的mipmap层级数量，以MostDetailedMip作为起始值。
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;//指定可以访问的最小mipmap层级。
 
-	hDescriptor.Offset(mTextureCbvOffset, mCbvSrvUavDescriptorSize);
 	srvDesc.Format = bricksTex->GetDesc().Format; //视图格式
 	mD3DDevice->CreateShaderResourceView(bricksTex.Get(), &srvDesc, hDescriptor);
 
@@ -533,6 +690,45 @@ void D3DApplication::BuildRootSignature()
 	);
 }
 
+void D3DApplication::BuildRootSignature_Stencil()
+{
+	// 根参数
+	CD3DX12_ROOT_PARAMETER rootParameter[4];
+	CD3DX12_DESCRIPTOR_RANGE TexcbvTable;
+	TexcbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+
+	rootParameter[0].InitAsDescriptorTable(1, &TexcbvTable, D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParameter[1].InitAsConstantBufferView(0);
+	rootParameter[2].InitAsConstantBufferView(1);
+	rootParameter[3].InitAsConstantBufferView(2);
+
+	auto staticSamplers = GetStaticSamplers();
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigdesc(
+		_countof(rootParameter),
+		rootParameter,
+		(UINT)staticSamplers.size(),
+		staticSamplers.data(),
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+
+
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigdesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+	assert(errorBlob == nullptr);
+
+	mD3DDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(mRootSignature.GetAddressOf())
+	);
+}
+
 void D3DApplication::BuildShadersAndInputLayout()
 {
 	HRESULT hr = S_OK;
@@ -550,9 +746,9 @@ void D3DApplication::BuildShadersAndInputLayout()
 		NULL,NULL
 	};
 
-	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\BlendMain_10.hlsl", nullptr, "VS", "vs_5_1");
-	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\BlendMain_10.hlsl", defines, "PS", "ps_5_1");
-	mShaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\BlendMain_10.hlsl", alphaTestDefines, "PS", "ps_5_1");
+	mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\StencilMain_11.hlsl", nullptr, "VS", "vs_5_1");
+	mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\StencilMain_11.hlsl", defines, "PS", "ps_5_1");
+	mShaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\StencilMain_11.hlsl", alphaTestDefines, "PS", "ps_5_1");
 	
 
 	mInputLayout =
@@ -678,11 +874,11 @@ void D3DApplication::BuildPSOs_Stencil()
 	mD3DDevice->CreateGraphicsPipelineState(&transparentPsoDesc, IID_PPV_ARGS(&mPSOs["transparent"]));
 
 	CD3DX12_BLEND_DESC mirrorBlendState(D3D12_DEFAULT);
-	mirrorBlendState.RenderTarget[0].RenderTargetWriteMask = 0; //禁止写入后台缓冲区
-	
+	mirrorBlendState.RenderTarget[0].RenderTargetWriteMask = 0;
+
 	D3D12_DEPTH_STENCIL_DESC mirrorDSS;
 	mirrorDSS.DepthEnable = true;
-	mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO; //禁止写入深度缓冲区
+	mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
 	mirrorDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
 	mirrorDSS.StencilEnable = true;
 	mirrorDSS.StencilReadMask = 0xff;
@@ -692,7 +888,8 @@ void D3DApplication::BuildPSOs_Stencil()
 	mirrorDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 	mirrorDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
 	mirrorDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-	
+
+	// We are not rendering backfacing polygons, so these settings do not matter.
 	mirrorDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 	mirrorDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 	mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
@@ -782,7 +979,7 @@ void D3DApplication::BuildFrameResource()
 {
 	for (int i = 0 ;i<gNumFrameResource;i++)
 	{
-		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 1, (UINT)mAllRitems.size(),(UINT)mMaterials.size()));
+		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 2, (UINT)mAllRitems.size(),(UINT)mMaterials.size()));
 	}
 }
 
@@ -991,26 +1188,29 @@ void D3DApplication::BuildRoomGeometry()
 void D3DApplication::BuildSkullGeometry()
 {
 	std::ifstream fin("Models/car.txt");
+
 	if (!fin)
 	{
+		MessageBoxW(0, L"Models/car.txt not found.", 0, 0);
 		return;
 	}
 
 	UINT vcount = 0;
 	UINT tcount = 0;
-
 	std::string ignore;
+
 	fin >> ignore >> vcount;
 	fin >> ignore >> tcount;
 	fin >> ignore >> ignore >> ignore >> ignore;
 
 	std::vector<Vertex> vertices(vcount);
-	for (UINT i = 0; i < vcount; i++)
+	for (UINT i = 0; i < vcount; ++i)
 	{
 		fin >> vertices[i].Position.x >> vertices[i].Position.y >> vertices[i].Position.z;
 		fin >> vertices[i].Normal.x >> vertices[i].Normal.y >> vertices[i].Normal.z;
 
-		vertices[i].TexC = { 0.f,0.f };
+		// Model does not have texture coordinates, so just zero them out.
+		vertices[i].TexC = { 0.0f, 0.0f };
 	}
 
 	fin >> ignore;
@@ -1018,16 +1218,20 @@ void D3DApplication::BuildSkullGeometry()
 	fin >> ignore;
 
 	std::vector<std::int32_t> indices(3 * tcount);
-	for (UINT i = 0; i < tcount; i++)
+	for (UINT i = 0; i < tcount; ++i)
 	{
 		fin >> indices[i * 3 + 0] >> indices[i * 3 + 1] >> indices[i * 3 + 2];
 	}
+
 	fin.close();
 
-	const UINT vertexByteSize = sizeof(Vertex);
-	const UINT indexByteSize = sizeof(std::int32_t);
-	const UINT vbByteSize = (UINT)vertices.size() * vertexByteSize;
-	const UINT ibByteSize = (UINT)indices.size() * indexByteSize;
+	//
+	// Pack the indices of all the meshes into one index buffer.
+	//
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::int32_t);
 
 	auto geo = std::make_unique<MeshGeometry>();
 	geo->Name = "skullGeo";
@@ -1044,10 +1248,10 @@ void D3DApplication::BuildSkullGeometry()
 	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),
 		mD3DCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
 
-	geo->VertexByteStride = vertexByteSize;
+	geo->VertexByteStride = sizeof(Vertex);
 	geo->VertexBufferByteSize = vbByteSize;
 	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
-	geo->IndexBufferByteSize = indexByteSize;
+	geo->IndexBufferByteSize = ibByteSize;
 
 	SubmeshGeometry submesh;
 	submesh.IndexCount = (UINT)indices.size();
@@ -1188,7 +1392,7 @@ void D3DApplication::BuildRenderItems_Stencil()
 	skullRitem->TexTransform = MathHelper::Identity4x4();
 	skullRitem->ObjCBIndex = 2;
 	skullRitem->Mat = mMaterials["skullMat"].get();
-	skullRitem->Geo = mGeometries["roomGeo"].get();
+	skullRitem->Geo = mGeometries["skullGeo"].get();
 	skullRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	skullRitem->IndexCount = skullRitem->Geo->DrawArgs["skull"].IndexCount;
 	skullRitem->StartIndexLocation = skullRitem->Geo->DrawArgs["skull"].StartIndexLocation;
@@ -1210,10 +1414,9 @@ void D3DApplication::BuildRenderItems_Stencil()
 	mirrorRitem->Mat = mMaterials["icemirror"].get();
 	mirrorRitem->Geo = mGeometries["roomGeo"].get();
 	mirrorRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	mirrorRitem->IndexCount = mirrorRitem->Geo->DrawArgs["skull"].IndexCount;
-	mirrorRitem->StartIndexLocation = mirrorRitem->Geo->DrawArgs["skull"].StartIndexLocation;
-	mirrorRitem->BaseVertexLocation = mirrorRitem->Geo->DrawArgs["skull"].BaseVertexLocation;
-
+	mirrorRitem->IndexCount = mirrorRitem->Geo->DrawArgs["mirror"].IndexCount;
+	mirrorRitem->StartIndexLocation = mirrorRitem->Geo->DrawArgs["mirror"].StartIndexLocation;
+	mirrorRitem->BaseVertexLocation = mirrorRitem->Geo->DrawArgs["mirror"].BaseVertexLocation;
 	mRitemLayer[(int)RenderLayer::Mirrors].push_back(mirrorRitem.get());
 	mRitemLayer[(int)RenderLayer::Transparent].push_back(mirrorRitem.get());
 
@@ -1269,6 +1472,42 @@ void D3DApplication::LoadTextures()
 
 	mTextures[woodCrateTex->Name] = std::move(woodCrateTex);
 	mTextures[grassTex->Name] = std::move(grassTex);
+}
+
+void D3DApplication::LoadTextures_Stencil()
+{
+	auto bricksTex = std::make_unique<Texture>();
+	bricksTex->Name = "bricksTex";
+	bricksTex->FileName = L"Textures/bricks3.dds";
+	DirectX::CreateDDSTextureFromFile12(mD3DDevice.Get(),
+		mD3DCommandList.Get(), bricksTex->FileName.c_str(),
+		bricksTex->Resource, bricksTex->UploadHeap);
+
+	auto checkboardTex = std::make_unique<Texture>();
+	checkboardTex->Name = "checkboardTex";
+	checkboardTex->FileName = L"Textures/checkboard.dds";
+	DirectX::CreateDDSTextureFromFile12(mD3DDevice.Get(),
+		mD3DCommandList.Get(), checkboardTex->FileName.c_str(),
+		checkboardTex->Resource, checkboardTex->UploadHeap);
+
+	auto iceTex = std::make_unique<Texture>();
+	iceTex->Name = "iceTex";
+	iceTex->FileName = L"Textures/ice.dds";
+	DirectX::CreateDDSTextureFromFile12(mD3DDevice.Get(),
+		mD3DCommandList.Get(), iceTex->FileName.c_str(),
+		iceTex->Resource, iceTex->UploadHeap);
+
+	auto white1x1Tex = std::make_unique<Texture>();
+	white1x1Tex->Name = "white1x1Tex";
+	white1x1Tex->FileName = L"Textures/white1x1.dds";
+	DirectX::CreateDDSTextureFromFile12(mD3DDevice.Get(),
+		mD3DCommandList.Get(), white1x1Tex->FileName.c_str(),
+		white1x1Tex->Resource, white1x1Tex->UploadHeap);
+
+	mTextures[bricksTex->Name] = std::move(bricksTex);
+	mTextures[checkboardTex->Name] = std::move(checkboardTex);
+	mTextures[iceTex->Name] = std::move(iceTex);
+	mTextures[white1x1Tex->Name] = std::move(white1x1Tex);
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> D3DApplication::GetStaticSamplers()
@@ -1406,29 +1645,16 @@ void D3DApplication::InitDirect3D()
 
 	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
 
-	//加载图片
-	LoadTextures();
-	//根签名和描述符表
-	BuildRootSignature();
-	//顶点与输入布局
+	LoadTextures_Stencil();
+	BuildRootSignature_Stencil();
+	BuildDescriptorHeaps_Stencil();
 	BuildShadersAndInputLayout();
-	// 创建模型；
-	BuildBoxGeometry();
-	BuildGridGeometry();
-	//
-	BuildMaterials();
-	//
-	BuildRenderItems();
-	//
+	BuildRoomGeometry();
+	BuildSkullGeometry();
+	BuildMaterials_Stencil();
+	BuildRenderItems_Stencil();
 	BuildFrameResource();
-	// 创建描述符堆
-	BuildDescriptorHeaps();
-	//创建常量缓冲区
-#if 1
-	BuildConstantBufferViews();
-#endif
-	//创建pso对象
-	BuildPSO();
+	BuildPSOs_Stencil();
 
 	mD3DCommandList->Close();
 	ID3D12CommandList* cmdsLists[] = { mD3DCommandList.Get() };
