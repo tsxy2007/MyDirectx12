@@ -20,6 +20,7 @@ enum class RenderLayer : int
 	AlphaTested,
 	Reflected,
 	Mirrors,
+	Shadow,
 	Count,
 };
 
@@ -261,6 +262,7 @@ private:
 
 	RenderItem* mSkullRitem = nullptr;
 	RenderItem* mReflectedSkullRitem = nullptr;
+	RenderItem* mShadowdSkullRitem = nullptr;
 
 	XMFLOAT3 mSkullTranslation = { 0.f,1.f,-5.f };
 

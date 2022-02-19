@@ -195,6 +195,10 @@ void D3DApplication::Draw_Stencil(const GameTimer& gt)
 	mD3DCommandList->SetPipelineState(mPSOs["transparent"].Get());
 	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);
 
+	// 绘制阴影
+	mD3DCommandList->SetPipelineState(mPSOs["shadow"].Get());
+	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Shadow]);
+
 	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT)));
 	mD3DCommandList->Close();
@@ -422,8 +426,16 @@ void D3DApplication::OnKeyboardInput(const GameTimer& gt)
 	XMMATRIX R = XMMatrixReflect(mirrorPlane);
 	XMStoreFloat4x4(&mReflectedSkullRitem->World, skullWorld * R);
 
+	// shadow 阴影
+	XMVECTOR shadowPlane = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+	XMVECTOR toMainLight = -XMLoadFloat3(&mMainPassCB.Lights[0].Direction);
+	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight);
+	XMMATRIX shadowOffsetY = XMMatrixTranslation(0.f, 0.001f, 0.f);
+	XMStoreFloat4x4(&mShadowdSkullRitem->World, skullWorld * S * shadowOffsetY);
+
 	mSkullRitem->NumFrameDirty = gNumFrameResource;
 	mReflectedSkullRitem->NumFrameDirty = gNumFrameResource;
+	mShadowdSkullRitem->NumFrameDirty = gNumFrameResource;
 }
 
 int D3DApplication::Run()
@@ -924,6 +936,30 @@ void D3DApplication::BuildPSOs_Stencil()
 	drawReflectionPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	drawReflectionPsoDesc.RasterizerState.FrontCounterClockwise = true;
 	mD3DDevice->CreateGraphicsPipelineState(&drawReflectionPsoDesc, IID_PPV_ARGS(&mPSOs["drawStencilReflections"]));
+
+
+	// pso for shadow objects
+	D3D12_DEPTH_STENCIL_DESC shadowDSS;
+	shadowDSS.DepthEnable = true;
+	shadowDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	shadowDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	shadowDSS.StencilEnable = true;
+	shadowDSS.StencilReadMask = 0xff;
+	shadowDSS.StencilWriteMask = 0xff;
+
+	shadowDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+	shadowDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+	shadowDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+	shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPsoDesc = transparentPsoDesc;
+	shadowPsoDesc.DepthStencilState = shadowDSS;
+	mD3DDevice->CreateGraphicsPipelineState(&shadowPsoDesc, IID_PPV_ARGS(&mPSOs["shadow"]));
 }
 
 void D3DApplication::BuildConstantBufferViews()
@@ -1321,11 +1357,20 @@ void D3DApplication::BuildMaterials_Stencil()
 	skullMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
 	skullMat->Roughness = 0.3f;
 
+	auto shadowMat = std::make_unique<Material>();
+	shadowMat->Name = "shadowMat";
+	shadowMat->MatCBIndex = 4;
+	shadowMat->DiffuseSrvHeapIndex = 3;
+	shadowMat->DiffuseAlbedo = XMFLOAT4(0.f, 0.f, 0.f, 0.5f);
+	shadowMat->FresnelR0 = XMFLOAT3(0.001f, 0.001f, 0.001f);
+	shadowMat->Roughness = 0.2f;
+
 
 	mMaterials["bricks"] = std::move(bricks);
 	mMaterials["checkertitle"] = std::move(checkertitle);
 	mMaterials["icemirror"] = std::move(icemirror);
 	mMaterials["skullMat"] = std::move(skullMat);
+	mMaterials["shadowMat"] = std::move(shadowMat);
 }
 
 void D3DApplication::BuildRenderItems()
@@ -1420,12 +1465,19 @@ void D3DApplication::BuildRenderItems_Stencil()
 	mRitemLayer[(int)RenderLayer::Mirrors].push_back(mirrorRitem.get());
 	mRitemLayer[(int)RenderLayer::Transparent].push_back(mirrorRitem.get());
 
+	auto shadowSkullRitem = std::make_unique<RenderItem>();
+	*shadowSkullRitem = *skullRitem;
+	shadowSkullRitem->ObjCBIndex = 5;
+	shadowSkullRitem->Mat = mMaterials["shadowMat"].get();
+	mShadowdSkullRitem = shadowSkullRitem.get();
+	mRitemLayer[(int)RenderLayer::Shadow].push_back(shadowSkullRitem.get());
 
 	mAllRitems.push_back(std::move(floorRitem));
 	mAllRitems.push_back(std::move(wallsRitem));
 	mAllRitems.push_back(std::move(skullRitem));
 	mAllRitems.push_back(std::move(reflectedSkullRitem));
 	mAllRitems.push_back(std::move(mirrorRitem));
+	mAllRitems.push_back(std::move(shadowSkullRitem));
 }
 
 float D3DApplication::AspectRatio() const
