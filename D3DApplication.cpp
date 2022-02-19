@@ -1227,7 +1227,7 @@ void D3DApplication::BuildSkullGeometry()
 
 	if (!fin)
 	{
-		MessageBoxW(0, L"Models/car.txt not found.", 0, 0);
+		MessageBoxW(0, L"Models/skull.txt not found.", 0, 0);
 		return;
 	}
 
