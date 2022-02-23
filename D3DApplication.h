@@ -21,6 +21,7 @@ enum class RenderLayer : int
 	Reflected,
 	Mirrors,
 	Shadow,
+	AlphaTestedTreeSprites,
 	Count,
 };
 
@@ -95,6 +96,8 @@ public:
 	void BuildGridGeometry();
 	void BuildRoomGeometry();
 	void BuildSkullGeometry();
+	void BuildTreeSpritesGeometry();
+
 	void BuildPSO();
 	void BuildPSOs_Stencil();
 	// CBV
@@ -198,6 +201,7 @@ private:
 	ComPtr<ID3DBlob> mvsByteCode = nullptr;
 	ComPtr<ID3DBlob> mpsByteCode = nullptr;
 	std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
+	std::vector<D3D12_INPUT_ELEMENT_DESC> mTreeSpriteInputLayout;
 	ComPtr<ID3D12PipelineState> mPSO = nullptr;
 
 	// 索引缓冲区和顶点缓冲区
