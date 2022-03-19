@@ -6,7 +6,8 @@
 #include "windowsx.h"
 
 using namespace DirectX;
-
+#define USE_VECADD
+//#define USE_BLUR
 struct Data
 {
 	XMFLOAT3 v1;
@@ -69,8 +70,7 @@ LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 void D3DApplication::Update(const GameTimer& gt)
 {
-#if 0
-
+#ifndef USE_VECADD
 	OnKeyboardInput(gt);
 	UpdateCamera(gt);
 #endif // 0
@@ -88,17 +88,13 @@ void D3DApplication::Update(const GameTimer& gt)
 		WaitForSingleObject(eventHandle, INFINITE);
 		CloseHandle(eventHandle);
 	}
-#if 0
+#ifndef USE_VECADD
 	UpdateObjectCBs(gt);
 	UpdateMaterialCBs(gt);
 	UpdateMainPassCB(gt);
 	UpdateReflectedPassCB(gt);
 
 #endif // 0
-	UpdateObjectCBs(gt);
-	UpdateMaterialCBs(gt);
-	UpdateMainPassCB(gt);
-	UpdateReflectedPassCB(gt);
 
 }
 
@@ -458,7 +454,7 @@ int D3DApplication::Run()
 			if (!mAppPaused)
 			{
 				Update(mTimer);
-#if 1
+#ifdef USE_VECADD
 				Draw(mTimer);
 #else
 				Draw_Stencil(mTimer);
@@ -1993,7 +1989,7 @@ void D3DApplication::InitDirect3D()
 	OnResize();
 
 	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
-#if 0
+#ifdef USE_BLUR
 
 	LoadTextures_Stencil();
 	BuildRootSignature_Stencil();
@@ -2006,7 +2002,7 @@ void D3DApplication::InitDirect3D()
 	BuildRenderItems_Stencil();
 	BuildFrameResource();
 	BuildPSOs_Stencil();
-#elif 1
+#elif defined USE_VECADD
 	BuildBuffers_VecAdd();
 	BuildRootSignature_VecAdd();
 	BuildDescriptorHeaps_VecAdd();
@@ -2022,7 +2018,7 @@ void D3DApplication::InitDirect3D()
 	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 	FlushCommandQueue();
 
-#if 1
+#ifdef USE_VECADD
 	DoComputeWork_VecAdd();
 #endif // 1
 
