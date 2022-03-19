@@ -6,6 +6,13 @@
 #include "windowsx.h"
 
 using namespace DirectX;
+
+struct Data
+{
+	XMFLOAT3 v1;
+	XMFLOAT2 v2;
+};
+
 void Wchar_tToString(std::string& szDst, wchar_t* wchar)
 {
 	wchar_t* wText = wchar;
@@ -62,8 +69,12 @@ LRESULT D3DApplication::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 void D3DApplication::Update(const GameTimer& gt)
 {
+#if 0
+
 	OnKeyboardInput(gt);
 	UpdateCamera(gt);
+#endif // 0
+
 	// 循环往复的获取帧资源数组中的元素;
 	mCurrentFrameResourceIndex = (mCurrentFrameResourceIndex + 1) % gNumFrameResource;
 	mCurrentFrameResource = mFrameResource[mCurrentFrameResourceIndex].get();
@@ -77,10 +88,18 @@ void D3DApplication::Update(const GameTimer& gt)
 		WaitForSingleObject(eventHandle, INFINITE);
 		CloseHandle(eventHandle);
 	}
+#if 0
 	UpdateObjectCBs(gt);
 	UpdateMaterialCBs(gt);
 	UpdateMainPassCB(gt);
 	UpdateReflectedPassCB(gt);
+
+#endif // 0
+	UpdateObjectCBs(gt);
+	UpdateMaterialCBs(gt);
+	UpdateMainPassCB(gt);
+	UpdateReflectedPassCB(gt);
+
 }
 
 void D3DApplication::Draw(const GameTimer& gt)
@@ -104,32 +123,10 @@ void D3DApplication::Draw(const GameTimer& gt)
 	mD3DCommandList->ClearDepthStencilView(TmpDepthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 	mD3DCommandList->OMSetRenderTargets(1, &TmpCurrentBackBufferView, true, &TmpDepthStencilView);
 
-	// 绑定描述符堆
-	ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
-	mD3DCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-	mD3DCommandList->SetGraphicsRootSignature(mRootSignature.Get());
-
-
-	//绑定常量缓冲堆
-	int passCbvIndex = mPassCbvOffset + mCurrentFrameResourceIndex;
-	auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
-	passCbvHandle.Offset(passCbvIndex, mCbvSrvUavDescriptorSize);
-	// 绑定的槽号，cbv句柄
-	mD3DCommandList->SetGraphicsRootDescriptorTable(1, passCbvHandle);
-	//auto passCB = mCurrentFrameResource->PassCB->Resource();
-	//mD3DCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
-
-	//绘制命令
-	mD3DCommandList->SetPipelineState(mPSOs["transparent"].Get());
-	DrawRenderItems(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);
-
-	DrawRenderItems(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
-
-	mD3DCommandList->SetPipelineState(mPSOs["alphaTested"].Get());
-	DrawRenderItems(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::AlphaTested]);
-
-	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
-		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT)));
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(
+	CurrentBackBuffer(),D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_PRESENT
+	)));
+	
 	mD3DCommandList->Close();
 
 	ID3D12CommandList* cmdLists[] = { mD3DCommandList.Get() };
@@ -461,7 +458,7 @@ int D3DApplication::Run()
 			if (!mAppPaused)
 			{
 				Update(mTimer);
-#if 0
+#if 1
 				Draw(mTimer);
 #else
 				Draw_Stencil(mTimer);
@@ -1759,6 +1756,163 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> D3DApplication::GetStaticSample
 		anisotropicWrap, anisotropicClamp };
 }
 
+void D3DApplication::BuildBuffers_VecAdd()
+{
+	std::vector<Data> dataA(NumDataElements);
+	std::vector<Data> dataB(NumDataElements);
+	
+	for (int i = 0; i < NumDataElements; i++)
+	{
+		dataA[i].v1 = XMFLOAT3(i, i, i);
+		dataA[i].v2 = XMFLOAT2(i, 0);
+
+		dataB[i].v1 = XMFLOAT3(-i, i, 0.f);
+		dataB[i].v2 = XMFLOAT2(0, -i);
+	}
+
+	UINT64 byteSize = dataA.size() * sizeof(Data);
+
+	mInputBufferA = d3dUtil::CreateDefaultBuffer(
+		mD3DDevice.Get(),
+		mD3DCommandList.Get(),
+		dataA.data(),
+		byteSize,
+		mInputUploadBufferA
+	);
+
+	mInputBufferB = d3dUtil::CreateDefaultBuffer(
+		mD3DDevice.Get(),
+		mD3DCommandList.Get(),
+		dataA.data(),
+		byteSize,
+		mInputUploadBufferB
+	);
+
+	mD3DDevice->CreateCommittedResource(
+		get_rvalue_ptr(CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT)),
+		D3D12_HEAP_FLAG_NONE,
+		get_rvalue_ptr(CD3DX12_RESOURCE_DESC::Buffer(byteSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		nullptr,
+		IID_PPV_ARGS(&mOutputBuffer));
+
+	mD3DDevice->CreateCommittedResource(
+		get_rvalue_ptr(CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK)),
+		D3D12_HEAP_FLAG_NONE,
+		get_rvalue_ptr(CD3DX12_RESOURCE_DESC::Buffer(byteSize)),
+		D3D12_RESOURCE_STATE_COPY_DEST,
+		nullptr,
+		IID_PPV_ARGS(&mReadBackBuffer));
+}
+
+void D3DApplication::BuildRootSignature_VecAdd()
+{
+	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+
+	slotRootParameter[0].InitAsShaderResourceView(0);
+	slotRootParameter[1].InitAsShaderResourceView(1);
+	slotRootParameter[2].InitAsUnorderedAccessView(0);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootParameter), 
+		slotRootParameter, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+	if (errorBlob!= nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+		return;
+	}
+
+	mD3DDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(mRootSignature.GetAddressOf())
+	);
+}
+
+void D3DApplication::BuildDescriptorHeaps_VecAdd()
+{
+}
+
+void D3DApplication::BuildShaderAndInputLayout_VecAdd()
+{
+	mShaders["vecAddCS"] = d3dUtil::CompileShader(L"Shaders\\VecAdd.hlsl", nullptr, "CS", "cs_5_0");
+}
+
+void D3DApplication::BuildFrameResources_VecAdd()
+{
+	for (int i = 0; i < gNumFrameResource; i++)
+	{
+		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 1));
+	}
+}
+
+void D3DApplication::BuildPSOs_VecAdd()
+{
+	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
+	computePsoDesc.pRootSignature = mRootSignature.Get();
+	computePsoDesc.CS =
+	{
+		reinterpret_cast<BYTE*>(mShaders["vecAddCS"]->GetBufferPointer()),
+		mShaders["vecAddCS"]->GetBufferSize()
+	};
+	computePsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+
+	mD3DDevice->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&mPSOs["vecAdd"]));
+}
+
+void D3DApplication::DoComputeWork_VecAdd()
+{
+	mD3DCommandAllocator->Reset();
+
+	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), mPSOs["vecAdd"].Get());
+
+	mD3DCommandList->SetComputeRootSignature(mRootSignature.Get());
+
+	mD3DCommandList->SetComputeRootShaderResourceView(0, mInputBufferA->GetGPUVirtualAddress());
+	mD3DCommandList->SetComputeRootShaderResourceView(1, mInputBufferB->GetGPUVirtualAddress());
+	mD3DCommandList->SetComputeRootUnorderedAccessView(2, mOutputBuffer->GetGPUVirtualAddress());
+
+	mD3DCommandList->Dispatch(64, 1, 1);
+
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(mOutputBuffer.Get(),
+		D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE)));
+
+	mD3DCommandList->CopyResource(mReadBackBuffer.Get(), mOutputBuffer.Get());
+
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(mOutputBuffer.Get(),
+		D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON)));
+
+	mD3DCommandList->Close();
+
+	// Add the command list to the queue for execution.
+	ID3D12CommandList* cmdsLists[] = { mD3DCommandList.Get() };
+	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+	// Wait for the work to finish.
+	FlushCommandQueue();
+
+	// Map the data so we can read it on CPU.
+	Data* mappedData = nullptr;
+	mReadBackBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData));
+
+	std::ofstream fout("results.txt");
+
+	for (int i = 0; i < NumDataElements; ++i)
+	{
+		fout << "(" << mappedData[i].v1.x << ", " << mappedData[i].v1.y << ", " << mappedData[i].v1.z <<
+			", " << mappedData[i].v2.x << ", " << mappedData[i].v2.y << ")" << std::endl;
+	}
+
+	mReadBackBuffer->Unmap(0, nullptr);
+}
+
 D3DApplication* D3DApplication::Get()
 {
 	static D3DApplication* Instance = nullptr;
@@ -1839,6 +1993,7 @@ void D3DApplication::InitDirect3D()
 	OnResize();
 
 	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
+#if 0
 
 	LoadTextures_Stencil();
 	BuildRootSignature_Stencil();
@@ -1851,11 +2006,26 @@ void D3DApplication::InitDirect3D()
 	BuildRenderItems_Stencil();
 	BuildFrameResource();
 	BuildPSOs_Stencil();
+#elif 1
+	BuildBuffers_VecAdd();
+	BuildRootSignature_VecAdd();
+	BuildDescriptorHeaps_VecAdd();
+	BuildShaderAndInputLayout_VecAdd();
+	BuildFrameResources_VecAdd();
+	BuildPSOs_VecAdd();
+
+#endif // 0
+
 
 	mD3DCommandList->Close();
 	ID3D12CommandList* cmdsLists[] = { mD3DCommandList.Get() };
 	mD3DCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 	FlushCommandQueue();
+
+#if 1
+	DoComputeWork_VecAdd();
+#endif // 1
+
 }
 
 void D3DApplication::LogAdapters()

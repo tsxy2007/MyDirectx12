@@ -129,6 +129,16 @@ public:
 
 	// 纹理end
 
+	// 计算着色器 base vecAdd
+	
+	void BuildBuffers_VecAdd();
+	void BuildRootSignature_VecAdd();
+	void BuildDescriptorHeaps_VecAdd();
+	void BuildShaderAndInputLayout_VecAdd();
+	void BuildFrameResources_VecAdd();
+	void BuildPSOs_VecAdd();
+	void DoComputeWork_VecAdd();
+	// 计算着色器 base vecAdd
 
 	int GetClientWidth()
 	{
@@ -270,4 +280,19 @@ private:
 
 	XMFLOAT3 mSkullTranslation = { 0.f,1.f,-5.f };
 
+
+	// 计算着色器 base vecAdd
+	
+	const int NumDataElements = 32;
+	//输入buffer
+	ComPtr<ID3D12Resource> mInputBufferA = nullptr;
+	ComPtr<ID3D12Resource> mInputUploadBufferA = nullptr;
+	ComPtr<ID3D12Resource> mInputBufferB = nullptr;
+	ComPtr<ID3D12Resource> mInputUploadBufferB = nullptr;
+	// 输出buffer
+	ComPtr<ID3D12Resource> mOutputBuffer = nullptr;
+	//回读到cpu的buffer
+	ComPtr<ID3D12Resource> mReadBackBuffer = nullptr;
+
+	// 计算着色器 base vecAdd
 };
