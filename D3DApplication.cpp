@@ -4,10 +4,11 @@
 #include <DirectXColors.h>
 #include "FrameResource.h"
 #include "windowsx.h"
+#include "BlurFilter.h"
 
 using namespace DirectX;
-#define USE_VECADD
-//#define USE_BLUR
+//#define USE_VECADD
+#define USE_BLUR
 struct Data
 {
 	XMFLOAT3 v1;
@@ -195,10 +196,20 @@ void D3DApplication::Draw_Stencil(const GameTimer& gt)
 	mD3DCommandList->SetPipelineState(mPSOs["shadow"].Get());
 	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Shadow]);
 
+	mBlurFilter->Execute(mD3DCommandList.Get(), mPostProcessRootSignature.Get(),
+		mPSOs["horzBlur"].Get(), mPSOs["vertBlur"].Get(), CurrentBackBuffer(), 4);
 
-
+#if 0
 	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT)));
+#else
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(
+		CurrentBackBuffer(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COPY_DEST)));
+	mD3DCommandList->CopyResource(CurrentBackBuffer(), mBlurFilter->Output());
+	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(
+		CurrentBackBuffer(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT)));
+#endif // 0
+
 	mD3DCommandList->Close();
 
 	ID3D12CommandList* cmdLists[] = { mD3DCommandList.Get() };
@@ -578,10 +589,11 @@ void D3DApplication::BuildDescriptorHeaps()
 void D3DApplication::BuildDescriptorHeaps_Stencil()
 {
 	UINT texCount = 5;
+	UINT blurDescriptorCount = 4;
 	mTextureCbvOffset = 0;
 
 	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
-	cbvHeapDesc.NumDescriptors = texCount;
+	cbvHeapDesc.NumDescriptors = texCount + blurDescriptorCount;
 	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -630,6 +642,11 @@ void D3DApplication::BuildDescriptorHeaps_Stencil()
 	srvDesc.Texture2DArray.FirstArraySlice = 0;
 	srvDesc.Texture2DArray.ArraySize = desc.DepthOrArraySize;
 	mD3DDevice->CreateShaderResourceView(treeArrayTex.Get(), &srvDesc, hDescriptor);
+
+	mBlurFilter->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(mCbvHeap->GetCPUDescriptorHandleForHeapStart(), 5, mCbvSrvUavDescriptorSize),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(mCbvHeap->GetGPUDescriptorHandleForHeapStart(), 5, mCbvSrvUavDescriptorSize),
+		mCbvSrvUavDescriptorSize);
 }
 
 void D3DApplication::BuildConstantBuffers()
@@ -776,6 +793,8 @@ void D3DApplication::BuildShadersAndInputLayout()
 	mShaders["treeSpriteGS"] = d3dUtil::CompileShader(L"Shaders\\GSTreeSpritesMain_12.hlsl", nullptr, "GS", "gs_5_1");
 	mShaders["treeSpritePS"] = d3dUtil::CompileShader(L"Shaders\\GSTreeSpritesMain_12.hlsl", alphaTestDefines, "PS", "ps_5_0");
 
+	mShaders["horzBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Blur.hlsl", nullptr, "HorzBlurCS", "cs_5_0");
+	mShaders["vertBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Blur.hlsl", nullptr, "VertBlurCS", "cs_5_0");
 	mInputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -1060,7 +1079,8 @@ void D3DApplication::BuildFrameResource()
 {
 	for (int i = 0 ;i<gNumFrameResource;i++)
 	{
-		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 2, (UINT)mAllRitems.size(),(UINT)mMaterials.size()));
+		mFrameResource.push_back(std::make_unique<FrameResource>(mD3DDevice.Get(), 
+			2, (UINT)mAllRitems.size(),(UINT)mMaterials.size()));
 	}
 }
 
@@ -1909,6 +1929,69 @@ void D3DApplication::DoComputeWork_VecAdd()
 	mReadBackBuffer->Unmap(0, nullptr);
 }
 
+void D3DApplication::BuildPostProcessRootSignature_Blur()
+{
+	CD3DX12_DESCRIPTOR_RANGE srvTable;
+	srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+	CD3DX12_DESCRIPTOR_RANGE uavTable;
+	uavTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+	
+	CD3DX12_ROOT_PARAMETER slotRootparameter[3];
+	
+	slotRootparameter[0].InitAsConstants(12, 0);
+	slotRootparameter[1].InitAsDescriptorTable(1, &srvTable);
+	slotRootparameter[2].InitAsDescriptorTable(1, &uavTable);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(_countof(slotRootparameter), slotRootparameter,
+		0, nullptr,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+	if (errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+
+	mD3DDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(mPostProcessRootSignature.GetAddressOf()));
+}
+
+void D3DApplication::BuildPSOs_Blur()
+{
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC horzBlurPSO = {};
+	horzBlurPSO.pRootSignature = mPostProcessRootSignature.Get();
+	horzBlurPSO.CS =
+	{
+		reinterpret_cast<BYTE*>(mShaders["horzBlurCS"]->GetBufferPointer()),
+		mShaders["horzBlurCS"]->GetBufferSize()
+	};
+
+	horzBlurPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	mD3DDevice->CreateComputePipelineState(&horzBlurPSO, IID_PPV_ARGS(&mPSOs["horzBlur"]));
+
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC vertBlurPSO = {};
+	vertBlurPSO.pRootSignature = mPostProcessRootSignature.Get();
+	vertBlurPSO.CS =
+	{
+		reinterpret_cast<BYTE*>(mShaders["vertBlurCS"]->GetBufferPointer()),
+		mShaders["vertBlurCS"]->GetBufferSize()
+	};
+
+	vertBlurPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	mD3DDevice->CreateComputePipelineState(&vertBlurPSO, IID_PPV_ARGS(&mPSOs["vertBlur"]));
+}
+
 D3DApplication* D3DApplication::Get()
 {
 	static D3DApplication* Instance = nullptr;
@@ -1989,12 +2072,18 @@ void D3DApplication::InitDirect3D()
 	OnResize();
 
 	mD3DCommandList->Reset(mD3DCommandAllocator.Get(), nullptr);
+
+#ifdef USE_BLUR
+	mBlurFilter = std::make_unique<BlurFilter>(mD3DDevice.Get(),
+		mClientWidth, mClientHeight, DXGI_FORMAT_R8G8B8A8_UNORM);
+#endif
 #ifdef USE_BLUR
 
 	LoadTextures_Stencil();
 	BuildRootSignature_Stencil();
+	BuildPostProcessRootSignature_Blur(); // blur
 	BuildDescriptorHeaps_Stencil();
-	BuildShadersAndInputLayout();
+	BuildShadersAndInputLayout(); // blur
 	BuildRoomGeometry();
 	BuildSkullGeometry();
 	BuildTreeSpritesGeometry();
@@ -2002,6 +2091,7 @@ void D3DApplication::InitDirect3D()
 	BuildRenderItems_Stencil();
 	BuildFrameResource();
 	BuildPSOs_Stencil();
+	BuildPSOs_Blur(); // blur
 #elif defined USE_VECADD
 	BuildBuffers_VecAdd();
 	BuildRootSignature_VecAdd();
@@ -2254,6 +2344,10 @@ void D3DApplication::OnResize()
 	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * XM_PI, AspectRatio(), 1.f, 1000.f);
 	XMStoreFloat4x4(&mProj, P);
 
+	if (mBlurFilter != nullptr)
+	{
+		mBlurFilter->OnResize(mClientWidth, mClientHeight);
+	}
 }
 
 void D3DApplication::FlushCommandQueue()

@@ -140,6 +140,12 @@ public:
 	void DoComputeWork_VecAdd();
 	// 计算着色器 base vecAdd
 
+	// 计算着色器 blur
+	void BuildPostProcessRootSignature_Blur();
+	void BuildPSOs_Blur();
+	// 计算着色器 blur
+
+
 	int GetClientWidth()
 	{
 		return mClientWidth;
@@ -295,4 +301,10 @@ private:
 	ComPtr<ID3D12Resource> mReadBackBuffer = nullptr;
 
 	// 计算着色器 base vecAdd
+
+	// 计算着色器 blur
+	
+	std::unique_ptr<class BlurFilter> mBlurFilter;
+	ComPtr<ID3D12RootSignature> mPostProcessRootSignature = nullptr;
+	// 计算着色器 blur
 };
