@@ -129,6 +129,11 @@ public:
 
 	// 纹理end
 
+	// 曲面细分阶段 begin
+
+	void BuildQuadPathGeometry_Tessellation();
+
+	// 曲面细分阶段 end
 
 	int GetClientWidth()
 	{
