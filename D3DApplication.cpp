@@ -178,6 +178,10 @@ void D3DApplication::Draw_Stencil(const GameTimer& gt)
 	mD3DCommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
 	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
 
+
+	mD3DCommandList->SetPipelineState(mPSOs["opaque_tessellation"].Get());
+	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Tessellation_Opaque]);
+
 	mD3DCommandList->OMSetStencilRef(1);
 	mD3DCommandList->SetPipelineState(mPSOs["markStencilMirrors"].Get());
 	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Mirrors]);
@@ -201,8 +205,6 @@ void D3DApplication::Draw_Stencil(const GameTimer& gt)
 	// 绘制阴影
 	mD3DCommandList->SetPipelineState(mPSOs["shadow"].Get());
 	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Shadow]);
-
-
 
 	mD3DCommandList->ResourceBarrier(1, get_rvalue_ptr(CD3DX12_RESOURCE_BARRIER::Transition(TmpCurrentBackBuffer,
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT)));
@@ -1761,6 +1763,117 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> D3DApplication::GetStaticSample
 
 void D3DApplication::BuildQuadPathGeometry_Tessellation()
 {
+	std::array<XMFLOAT3, 4> vertices =
+	{
+		XMFLOAT3(-10.f,0.f,+10.f),
+		XMFLOAT3(+10.f,0.f,+10.f),
+		XMFLOAT3(-10.f,0.f,-10.f),
+		XMFLOAT3(+10.f,0.f,-10.f)
+	};
+
+	std::array<std::int16_t, 4> indics = { 0,1,2,3 };
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(XMFLOAT3);
+	const UINT ibByteSize = (UINT)indics.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "quadpatchGeo";
+
+	D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU);
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU);
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indics.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),
+		mD3DCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(mD3DDevice.Get(),
+		mD3DCommandList.Get(), indics.data(), ibByteSize, geo->IndexBufferUploader);
+
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->VertexByteStride = sizeof(XMFLOAT3);
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry quadSubmesh;
+	quadSubmesh.IndexCount = 4;
+	quadSubmesh.StartIndexLocation = 0;
+	quadSubmesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["quadpatch"] = quadSubmesh;
+	mGeometries[geo->Name] = std::move(geo);
+}
+
+void D3DApplication::BuildRenderItems_Tessellation()
+{
+	auto quadPatchRitem = std::make_unique<RenderItem>();
+	quadPatchRitem->World = MathHelper::Identity4x4();
+	quadPatchRitem->TexTransform = MathHelper::Identity4x4();
+	quadPatchRitem->ObjCBIndex = 0;
+	quadPatchRitem->Mat = mMaterials["shadowMat"].get();
+	quadPatchRitem->Geo = mGeometries["quadpatchGeo"].get();
+	quadPatchRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST;
+	quadPatchRitem->IndexCount = quadPatchRitem->Geo->DrawArgs["quadpatch"].IndexCount;
+	quadPatchRitem->StartIndexLocation = quadPatchRitem->Geo->DrawArgs["quadpatch"].StartIndexLocation;
+	quadPatchRitem->BaseVertexLocation = quadPatchRitem->Geo->DrawArgs["quadpatch"].BaseVertexLocation;
+	mRitemLayer[(int)RenderLayer::Tessellation_Opaque].push_back(quadPatchRitem.get());
+
+	mAllRitems.push_back(std::move(quadPatchRitem));
+}
+
+void D3DApplication::BuildShadersAndInputLayout_Tessellation()
+{
+	mShaders["tessVS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", nullptr, "VS", "vs_5_0");
+	mShaders["tessHS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", nullptr, "HS", "hs_5_0");
+	mShaders["tessDS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", nullptr, "DS", "ds_5_0");
+	mShaders["tessPS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", nullptr, "PS", "ps_5_0");
+
+	mInputLayout_tessellation =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 } 
+	};
+}
+
+void D3DApplication::BuildPSOs_Tessellation()
+{
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePsoDesc;
+	ZeroMemory(&opaquePsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	opaquePsoDesc.InputLayout = { mInputLayout_tessellation.data(),(UINT)mInputLayout_tessellation.size() };
+	opaquePsoDesc.pRootSignature = mRootSignature.Get();
+	opaquePsoDesc.VS =
+	{
+		reinterpret_cast<BYTE*>(mShaders["tessVS"]->GetBufferPointer()),
+		mShaders["tessVS"]->GetBufferSize()
+	};
+	opaquePsoDesc.HS =
+	{
+		reinterpret_cast<BYTE*>(mShaders["tessHS"]->GetBufferPointer()),
+		mShaders["tessHS"]->GetBufferSize()
+	};
+	opaquePsoDesc.DS =
+	{
+		reinterpret_cast<BYTE*>(mShaders["tessDS"]->GetBufferPointer()),
+		mShaders["tessDS"]->GetBufferSize()
+	};
+	opaquePsoDesc.PS =
+	{
+		reinterpret_cast<BYTE*>(mShaders["tessPS"]->GetBufferPointer()),
+		mShaders["tessPS"]->GetBufferSize()
+	};
+
+	opaquePsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	opaquePsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	opaquePsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	opaquePsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	opaquePsoDesc.SampleMask = UINT_MAX;
+	opaquePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+	opaquePsoDesc.NumRenderTargets = 1;
+	opaquePsoDesc.RTVFormats[0] = mBackBufferFormat;
+	opaquePsoDesc.SampleDesc.Count = b4xMassState ? 4 : 1;
+	opaquePsoDesc.SampleDesc.Quality = b4xMassState ? (m4xMsaaQulity - 1) : 0;
+	opaquePsoDesc.DSVFormat = mDepthStencilFormat;
+	mD3DDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["opaque_tessellation"]));
 }
 
 D3DApplication* D3DApplication::Get()
@@ -1848,12 +1961,16 @@ void D3DApplication::InitDirect3D()
 	BuildRootSignature_Stencil();
 	BuildDescriptorHeaps_Stencil();
 	BuildShadersAndInputLayout();
+	BuildShadersAndInputLayout_Tessellation();
 	BuildRoomGeometry();
 	BuildSkullGeometry();
+	BuildQuadPathGeometry_Tessellation();
 	BuildTreeSpritesGeometry();
 	BuildMaterials_Stencil();
 	BuildRenderItems_Stencil();
+	BuildRenderItems_Tessellation();
 	BuildFrameResource();
+	BuildPSOs_Tessellation();
 	BuildPSOs_Stencil();
 
 	mD3DCommandList->Close();
