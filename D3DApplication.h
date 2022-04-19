@@ -139,6 +139,10 @@ public:
 
 	// 曲面细分阶段 end
 
+	// 动态索引
+	void UpdateMaterialBuffer(const GameTimer& gt);
+	void DrawRenderItems_DynamicIndex(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
+
 	int GetClientWidth()
 	{
 		return mClientWidth;

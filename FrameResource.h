@@ -7,6 +7,10 @@ struct ObjectConstants
 {
 	DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();
 	DirectX::XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
+	UINT MatrialIndex;
+	UINT ObjPad0;
+	UINT ObjPad1;
+	UINT ObjPad2;
 };
 
 struct Vertex
@@ -52,6 +56,21 @@ struct PassConstants
 	Light Lights[MaxLights];
 };
 
+struct MatrialData
+{
+	DirectX::XMFLOAT4 DiffuseAlbedo = { 1.f,1.f,1.f,1.f };
+	DirectX::XMFLOAT3 FresnelR0 = { 0.01f,0.01f,0.01f };
+
+	float Roughness = 64.f;
+
+	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
+
+	UINT DiffuseMapIndex = 0;
+	UINT MaterialPad0;
+	UINT MaterialPad1;
+	UINT MaterialPad2;
+};
+
 class FrameResource
 {
 public:
@@ -67,6 +86,7 @@ public:
 	//
 	std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
 	//
+	std::unique_ptr<UploadBuffer<MatrialData>> MaterialBuffer = nullptr;
 	std::unique_ptr<UploadBuffer<MaterialConstants>> MaterialCB = nullptr;
 	//
 	UINT64 Fence = 0;

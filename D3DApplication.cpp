@@ -78,7 +78,8 @@ void D3DApplication::Update(const GameTimer& gt)
 		CloseHandle(eventHandle);
 	}
 	UpdateObjectCBs(gt);
-	UpdateMaterialCBs(gt);
+	//UpdateMaterialCBs(gt);
+	UpdateMaterialBuffer(gt);
 	UpdateMainPassCB(gt);
 	UpdateReflectedPassCB(gt);
 }
@@ -176,23 +177,26 @@ void D3DApplication::Draw_Stencil(const GameTimer& gt)
 
 	auto passCB = mCurrentFrameResource->PassCB->Resource();
 	mD3DCommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
-	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+	DrawRenderItems_DynamicIndex(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+
+	auto MatBuffer = mCurrentFrameResource->MaterialBuffer->Resource();
+	mD3DCommandList->SetGraphicsRootShaderResourceView(2, MatBuffer->GetGPUVirtualAddress());
 
 
 	mD3DCommandList->SetPipelineState(mPSOs["opaque_tessellation"].Get());
-	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Tessellation_Opaque]);
+	DrawRenderItems_DynamicIndex(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Tessellation_Opaque]);
 
 	mD3DCommandList->OMSetStencilRef(1);
 	mD3DCommandList->SetPipelineState(mPSOs["markStencilMirrors"].Get());
-	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Mirrors]);
+	DrawRenderItems_DynamicIndex(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Mirrors]);
 
 	D3D12_GPU_VIRTUAL_ADDRESS ReflectionPassCbAddress = passCB->GetGPUVirtualAddress() + 1 * passCBByteSize;
 	mD3DCommandList->SetGraphicsRootConstantBufferView(2, ReflectionPassCbAddress);
 	mD3DCommandList->SetPipelineState(mPSOs["drawStencilReflections"].Get());
-	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Reflected]);
+	DrawRenderItems_DynamicIndex(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::Reflected]);
 
 	mD3DCommandList->SetPipelineState(mPSOs["treeSprites"].Get());
-	DrawRenderItems_Stencil(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::AlphaTestedTreeSprites]);
+	DrawRenderItems_DynamicIndex(mD3DCommandList.Get(), mRitemLayer[(int)RenderLayer::AlphaTestedTreeSprites]);
 
 	mD3DCommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
 
@@ -726,13 +730,13 @@ void D3DApplication::BuildRootSignature_Stencil()
 	// 根参数
 	CD3DX12_ROOT_PARAMETER rootParameter[4];
 	CD3DX12_DESCRIPTOR_RANGE TexcbvTable;
-	TexcbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	TexcbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0, 0);
 
 
-	rootParameter[0].InitAsDescriptorTable(1, &TexcbvTable, D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParameter[1].InitAsConstantBufferView(0);
 	rootParameter[2].InitAsConstantBufferView(1);
-	rootParameter[3].InitAsConstantBufferView(2);
+	rootParameter[3].InitAsShaderResourceView(0, 1);
+	rootParameter[0].InitAsDescriptorTable(1, &TexcbvTable, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	auto staticSamplers = GetStaticSamplers();
 
@@ -1874,6 +1878,53 @@ void D3DApplication::BuildPSOs_Tessellation()
 	opaquePsoDesc.SampleDesc.Quality = b4xMassState ? (m4xMsaaQulity - 1) : 0;
 	opaquePsoDesc.DSVFormat = mDepthStencilFormat;
 	mD3DDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["opaque_tessellation"]));
+}
+
+void D3DApplication::UpdateMaterialBuffer(const GameTimer& gt)
+{
+	auto currentMaterialBuffer = mCurrentFrameResource->MaterialBuffer.get();
+	for (auto& m : mMaterials)
+	{
+		Material* mat = m.second.get();
+		if (mat->NumFramesDirty > 0)
+		{
+			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
+
+			MatrialData matData;
+			matData.DiffuseAlbedo = mat->DiffuseAlbedo;
+			matData.FresnelR0 = mat->FresnelR0;
+			matData.Roughness = mat->Roughness;
+
+			XMStoreFloat4x4(&matData.MatTransform, XMMatrixTranspose(matTransform));
+
+			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
+			currentMaterialBuffer->CopyData(mat->MatCBIndex, matData);
+			mat->NumFramesDirty--;
+		}
+	}
+}
+
+void D3DApplication::DrawRenderItems_DynamicIndex(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem)
+{
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+	auto matCB = mCurrentFrameResource->MaterialCB->Resource();
+	auto objectCB = mCurrentFrameResource->ObjectCB->Resource();
+	for (int i = 0; i < ritem.size(); i++)
+	{
+		auto ri = ritem[i];
+
+		cmdList->IASetVertexBuffers(0, 1, get_rvalue_ptr(ri->Geo->VertexBufferView()));
+		cmdList->IASetIndexBuffer(get_rvalue_ptr(ri->Geo->IndexBufferView()));
+		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize;
+
+		cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+		// 添加绘制命令;
+		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+	}
 }
 
 D3DApplication* D3DApplication::Get()
