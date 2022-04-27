@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Header Files\Maths">
+      <UniqueIdentifier>{8c0f5cff-3e59-4f28-86f4-fd4b30fae159}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Maths">
+      <UniqueIdentifier>{e1508251-8988-423f-ac9e-377a5b0d5f8a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -57,6 +63,9 @@
     <ClInclude Include="Camera.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Vector3.h">
+      <Filter>Header Files\Maths</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MyDirectx12.cpp">
@@ -88,6 +97,9 @@
     </ClCompile>
     <ClCompile Include="Camera.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Vector3.cpp">
+      <Filter>Source Files\Maths</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
