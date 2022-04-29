@@ -5,6 +5,7 @@
 #include "FrameResource.h"
 #include "windowsx.h"
 
+
 using namespace DirectX;
 void Wchar_tToString(std::string& szDst, wchar_t* wchar)
 {

@@ -13,6 +13,7 @@
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 
+
 enum class RenderLayer : int
 {
 	Opaque = 0,
