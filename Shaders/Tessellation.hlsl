@@ -101,19 +101,21 @@ struct HullOut
 };
 
 [domain("quad")]
-[partitioning("interger")]
+[partitioning("integer")]
 [outputtopology("triangle_cw")]
 [outputcontrolpoints(4)]
 [patchconstantfunc("ConstantHS")]
 [maxtessfactor(64.0f)]
-HullOut HS(InputPatch<VertexOut,4>p,
-uint i : SV_OutputControlPointID,
-uint patchId : SV_PrimitiveID)
+HullOut HS(InputPatch<VertexOut, 4> p,
+	uint i : SV_OutputControlPointID,
+	uint patchId : SV_PrimitiveID)
 {
 	HullOut hout;
+
 	hout.PosL = p[i].PosL;
+
 	return hout;
-};
+}
 
 struct DomainOut
 {

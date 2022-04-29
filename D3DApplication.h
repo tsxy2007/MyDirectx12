@@ -23,6 +23,7 @@ enum class RenderLayer : int
 	Mirrors,
 	Shadow,
 	AlphaTestedTreeSprites,
+	Tessellation_Opaque,
 	Count,
 };
 
@@ -133,6 +134,9 @@ public:
 	// 曲面细分阶段 begin
 
 	void BuildQuadPathGeometry_Tessellation();
+	void BuildRenderItems_Tessellation();
+	void BuildShadersAndInputLayout_Tessellation();
+	void BuildPSOs_Tessellation();
 
 	// 曲面细分阶段 end
 
@@ -180,8 +184,8 @@ private:
 	UINT m4xMsaaQulity = 0;
 	bool b4xMassState = false;
 
-	int mClientWidth = 640;
-	int mClientHeight = 800;
+	int mClientWidth = 1920;
+	int mClientHeight = 1080;
 
 	DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -275,5 +279,9 @@ private:
 	RenderItem* mShadowdSkullRitem = nullptr;
 
 	XMFLOAT3 mSkullTranslation = { 0.f,1.f,-5.f };
+
+	// 曲面细分阶段 begin
+	std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout_tessellation;
+	// 曲面细分阶段 end
 
 };
