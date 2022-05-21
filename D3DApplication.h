@@ -9,6 +9,7 @@
 #include "UploadBuffer.h"
 #include "FrameResource.h"
 #include "GameTimer.h"
+#include "Camera.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -108,6 +109,7 @@ public:
 	//
 	void BuildRenderItems();
 	void BuildRenderItems_Stencil();
+	void Update_Stencil(const GameTimer& gt);
 	// 绘制每个item
 	void DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
 	void DrawRenderItems_Stencil(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
@@ -139,10 +141,25 @@ public:
 
 	// 曲面细分阶段 end
 
-	// 动态索引
-	void UpdateMaterialBuffer(const GameTimer& gt);
+	// 动态索引 being
+	void UpdateMaterialBuffer(const GameTimer& gt); 
 	void DrawRenderItems_DynamicIndex(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
+	void LoadTextures_DynamicIndex();
+	void BuildRootSignature_DynamicIndex();
+	void BuildDescriptorHeaps_DynamicIndex();
+	void BuildShadersAndInputLayout_DynamicIndex();
+	void BuildShapeGeometry_DynamicIndex();
+	void BuildMaterials_DynamicIndex();
+	void BuildRenderItems_DynamicIndex();
+	void BuildFrameResources_DynamicIndex();
+	void BuildPSOs_DynamicIndex();
+	void Draw_DynamicIndex(const GameTimer& gt);
 
+	void UpdateObjectCBs_DynamicIndex(const GameTimer& gt);
+	void UpdateMaterialBuffer_DynamicIndex(const GameTimer& gt);
+	void UpdateMainPassCB_DynamicIndex(const GameTimer& gt);
+	void Update_DynamicIndex(const GameTimer& gt);
+	// 动态索引 end
 	int GetClientWidth()
 	{
 		return mClientWidth;
@@ -287,4 +304,6 @@ private:
 	std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout_tessellation;
 	// 曲面细分阶段 end
 
+
+	Camera mCamera;
 };

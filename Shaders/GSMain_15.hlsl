@@ -13,7 +13,22 @@
 
 #include "LightingUtil.hlsl"
 
-Texture2D<float4>    gDiffuseMap : register(t0);
+struct MaterialData
+{
+    float4 DiffuseAlbedo;
+    float3 FresnelR0;
+    float Roughness;
+    float4x4 MatTransform;
+    uint DiffuseMapIndex;
+    uint MatPad0;
+    uint MatPad1;
+    uint MatPad2;
+};
+
+Texture2D gDiffuseMap[4] : register(t0);
+StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
+
+
 SamplerState gsamPointWrap        : register(s0);
 SamplerState gsamPointClamp       : register(s1);
 SamplerState gsamLinearWrap       : register(s2);
@@ -21,10 +36,15 @@ SamplerState gsamLinearClamp      : register(s3);
 SamplerState gsamAnisotropicWrap  : register(s4);
 SamplerState gsamAnisotropicClamp : register(s5);
 
+
 cbuffer cbPerObject : register(b0)
 {
     float4x4 gWorld;
     float4x4 gTexTransform;
+    uint gMaterialIndex;
+    uint gObjPad0;
+    uint gObjPad1;
+    uint gObjPad2;
 };
 
 cbuffer cbPass : register(b1)
@@ -54,15 +74,15 @@ cbuffer cbPass : register(b1)
     Light gLights[MaxLights];
 };
 
-//每种材质的不同常量数据
+////每种材质的不同常量数据
 
-cbuffer cbMaterial : register(b2)
-{
-    float4 gDiffuseAlbedo;
-    float3 gFresnelR0;
-    float gRoughness;
-    float4x4 gMatTransform;
-};
+//cbuffer cbMaterial : register(b2)
+//{
+//    float4 gDiffuseAlbedo;
+//    float3 gFresnelR0;
+//    float gRoughness;
+//    float4x4 gMatTransform;
+//};
 
 
 struct VertexIn
@@ -80,58 +100,61 @@ struct VertexOut
 	float2 TexC    : TEXCOORD;
 };
 
+
 VertexOut VS(VertexIn vin)
 {
-   VertexOut vout = (VertexOut)0.0f;
+    VertexOut vout = (VertexOut) 0.0f;
+
+	// Fetch the material data.
+    MaterialData matData = gMaterialData[gMaterialIndex];
 	
+    // Transform to world space.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
     vout.PosW = posW.xyz;
 
-    vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
+    // Assumes nonuniform scaling; otherwise, need to use inverse-transpose of world matrix.
+    vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
 
+    // Transform to homogeneous clip space.
     vout.PosH = mul(posW, gViewProj);
-
+	
+	// Output vertex attributes for interpolation across triangle.
     float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
-    vout.TexC = mul(texC, gMatTransform).xy;
-    
+    vout.TexC = mul(texC, matData.MatTransform).xy;
+	
     return vout;
 }
 
 float4 PS(VertexOut pin) : SV_Target
 {
-    //
-    float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
-    
-#ifdef ALPHA_TEST
-	clip(diffuseAlbedo.a - 0.1f);
-#endif
+   // Fetch the material data.
+    MaterialData matData = gMaterialData[gMaterialIndex];
+    float4 diffuseAlbedo = matData.DiffuseAlbedo;
+    float3 fresnelR0 = matData.FresnelR0;
+    float roughness = matData.Roughness;
+    uint diffuseTexIndex = matData.DiffuseMapIndex;
 
-    // diffuseAlbedo = gDiffuseAlbedo;
+	// Dynamically look up the texture in the array.
+    diffuseAlbedo *= gDiffuseMap[diffuseTexIndex].Sample(gsamLinearWrap, pin.TexC);
+	
+    // Interpolating normal can unnormalize it, so renormalize it.
     pin.NormalW = normalize(pin.NormalW);
 
-    float3 toEyeW = gEyePosW - pin.PosW;
-    float distToEye = length(toEyeW);
-    toEyeW /= distToEye;
+    // Vector from point being lit to eye. 
+    float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
-
-
-    // 环境光
+    // Light terms.
     float4 ambient = gAmbientLight * diffuseAlbedo;
 
-    const float shininess = 1.0f - gRoughness;
-
-    Material mat = { diffuseAlbedo, gFresnelR0, shininess };
+    const float shininess = 1.0f - roughness;
+    Material mat = { diffuseAlbedo, fresnelR0, shininess };
     float3 shadowFactor = 1.0f;
-    // 漫反射 + 高光
-    float4 directLight = ComputeLighting(gLights, mat, pin.PosW, 
+    float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
         pin.NormalW, toEyeW, shadowFactor);
 
-    float4 litColor = ambient + directLight; // 完整的光照;
+    float4 litColor = ambient + directLight;
 
-#ifdef FOG
-	float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
-	litColor = lerp(litColor, gFogColor, fogAmount);
-#endif
+    // Common convention to take alpha from diffuse albedo.
     litColor.a = diffuseAlbedo.a;
 
     return litColor;
