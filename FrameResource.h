@@ -3,6 +3,16 @@
 #include "MathHelper.h"
 #include "UploadBuffer.h"
 
+struct InstanceData
+{
+	DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();
+	DirectX::XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
+	UINT MaterialIndex;
+	UINT InstancePad0;
+	UINT InstancePad1;
+	UINT InstancePad2;
+};
+
 struct ObjectConstants
 {
 	DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();
@@ -88,6 +98,7 @@ public:
 	//
 	std::unique_ptr<UploadBuffer<MatrialData>> MaterialBuffer = nullptr;
 	std::unique_ptr<UploadBuffer<MaterialConstants>> MaterialCB = nullptr;
+	std::unique_ptr<UploadBuffer<InstanceData>> InstanceBuffer = nullptr;
 	//
 	UINT64 Fence = 0;
 

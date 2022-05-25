@@ -17,6 +17,7 @@ public:
 		return I;
 	}
 
+
 	template<typename T>
 	static T Clamp(const T& x, const T& low, const T& high)
 	{
@@ -40,5 +41,6 @@ public:
 	}
 
 	static const float Pi;
+	static const float Infinity ;
 };
 

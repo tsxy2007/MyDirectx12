@@ -41,6 +41,7 @@ struct RenderItem
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST; // 图元拓扑
 
 	UINT IndexCount = 0;
+	UINT InstanceCount = 0;
 	UINT StartIndexLocation = 0;
 	int BaseVertexLocation = 0;
 
@@ -48,6 +49,9 @@ struct RenderItem
 	
 
 	Material* Mat = nullptr;
+
+	BoundingBox Bounds;
+	std::vector<InstanceData> Instances;
 };
 
 using Microsoft::WRL::ComPtr;
@@ -127,7 +131,7 @@ public:
 	// 纹理begin
 	
 	void LoadTextures();
-	void LoadTextures_Stencil();
+	//void LoadTextures_Stencil();
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
 
 	// 纹理end
@@ -160,6 +164,28 @@ public:
 	void UpdateMainPassCB_DynamicIndex(const GameTimer& gt);
 	void Update_DynamicIndex(const GameTimer& gt);
 	// 动态索引 end
+
+
+	// 实例化 begining
+	void LoadTextures_Instancing();
+	void BuildRootSignature_Instancing();
+	void BuildDescriptorHeaps_Instancing();
+	void BuildShaderAndInputLayout_Instancing();
+	void BuildSkullGeometry_Instancing();
+	void BuildMaterials_Instancing();
+	void BuildRenderItems_Instancing();
+	void BuildFrameResources_Instancing();
+	void BuildPSOs_Instancing();
+
+	void UpdateInstanceData_Instancing(const GameTimer& gt);
+	void UpdateMaterialBuffer_Instancing(const GameTimer& gt);
+	void UpdateMainPassCB_Instancing(const GameTimer& gt);
+	void Update_Instancing(const GameTimer& gt);
+	void DrawRenderItems_Instancing(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritem);
+	void Draw_Instancing(const GameTimer& gt);
+	UINT mInstanceCount = 0;
+	BoundingFrustum mCamFrustum;
+	// 实例化 ending
 	int GetClientWidth()
 	{
 		return mClientWidth;
