@@ -4,6 +4,9 @@
 #include <DirectXColors.h>
 #include "FrameResource.h"
 #include "windowsx.h"
+#include "assimp/Importer.hpp"      // 导入器在该头文件中定义
+#include "assimp/scene.h"           // 读取到的模型数据都放在scene中
+#include "assimp/postprocess.h"
 
 using namespace DirectX;
 void Wchar_tToString(std::string& szDst, wchar_t* wchar)
@@ -2616,7 +2619,22 @@ void D3DApplication::BuildShaderAndInputLayout_Instancing()
 
 void D3DApplication::BuildSkullGeometry_Instancing()
 {
-	std::ifstream fin("Models/skull.txt");
+	Assimp::Importer aiImporter;
+	// 读取模型文件
+	const aiScene* pModel = aiImporter.ReadFile("Textures/WusonOBJ.obj", aiProcess_Triangulate | aiProcess_FlipUVs);
+	
+	if (!pModel||pModel->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !pModel->mRootNode)
+	{
+		return;
+	}
+	
+	for (size_t i = 0; i < pModel->mRootNode->mNumMeshes; i++)
+	{
+		aiMesh* mesh = pModel->mMeshes[pModel->mRootNode->mMeshes[i]];
+
+	}
+	
+	std::ifstream fin("Models/car.txt");
 
 	if (!fin)
 	{
