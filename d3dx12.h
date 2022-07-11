@@ -1112,7 +1112,7 @@ struct CD3DX12_CPU_DESCRIPTOR_HANDLE : public D3D12_CPU_DESCRIPTOR_HANDLE
     
     static inline void InitOffsetted(_Out_ D3D12_CPU_DESCRIPTOR_HANDLE &handle, _In_ const D3D12_CPU_DESCRIPTOR_HANDLE &base, INT offsetInDescriptors, UINT descriptorIncrementSize)
     {
-        handle.ptr = base.ptr + offsetInDescriptors * descriptorIncrementSize;
+        handle.ptr = base.ptr + (int)offsetInDescriptors * descriptorIncrementSize;
     }
 };
 
@@ -1173,7 +1173,7 @@ struct CD3DX12_GPU_DESCRIPTOR_HANDLE : public D3D12_GPU_DESCRIPTOR_HANDLE
     
     static inline void InitOffsetted(_Out_ D3D12_GPU_DESCRIPTOR_HANDLE &handle, _In_ const D3D12_GPU_DESCRIPTOR_HANDLE &base, INT offsetInDescriptors, UINT descriptorIncrementSize)
     {
-        handle.ptr = base.ptr + offsetInDescriptors * descriptorIncrementSize;
+        handle.ptr = base.ptr + (int)offsetInDescriptors * descriptorIncrementSize;
     }
 };
 
@@ -1399,7 +1399,7 @@ inline UINT64 UpdateSubresources(
     for (UINT i = 0; i < NumSubresources; ++i)
     {
         if (pRowSizesInBytes[i] > (SIZE_T)-1) return 0;
-        D3D12_MEMCPY_DEST DestData = { pData + pLayouts[i].Offset, pLayouts[i].Footprint.RowPitch, pLayouts[i].Footprint.RowPitch * pNumRows[i] };
+        D3D12_MEMCPY_DEST DestData = { pData + pLayouts[i].Offset, pLayouts[i].Footprint.RowPitch, (int)pLayouts[i].Footprint.RowPitch * pNumRows[i] };
         MemcpySubresource(&DestData, &pSrcData[i], (SIZE_T)pRowSizesInBytes[i], pNumRows[i], pLayouts[i].Footprint.Depth);
     }
     pIntermediate->Unmap(0, NULL);

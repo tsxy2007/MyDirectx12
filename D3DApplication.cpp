@@ -235,11 +235,11 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
 
 
-		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize;
-		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + (int)ri->ObjCBIndex * objCBByteSize;
+		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + (int)ri->Mat->MatCBIndex * matCBByteSize;
 		{
 
-			UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mAllRitems.size() + ri->ObjCBIndex;
+			UINT cbvIndex = mCurrentFrameResourceIndex * (UINT)mAllRitems.size() + (int)ri->ObjCBIndex;
 			CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 			cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
 			cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
@@ -250,7 +250,7 @@ void D3DApplication::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const s
 		{
 
 			// 通过根描述符添加cbv
-			D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + ri->Mat->MatCBIndex * matCBByteSize;
+			D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress() + (int)ri->Mat->MatCBIndex * matCBByteSize;
 			cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
 			//cmdList->SetGraphicsRootConstantBufferView(2, matCBAddress);
 		}
@@ -1242,7 +1242,8 @@ void D3DApplication::BuildRoomGeometry()
 
 void D3DApplication::BuildSkullGeometry()
 {
-	std::ifstream fin("Models/car.txt");
+	//car.txt
+	std::ifstream fin("Models/skull.txt");
 
 	if (!fin)
 	{
@@ -1592,7 +1593,7 @@ void D3DApplication::Update_Stencil(const GameTimer& gt)
 
 	// GPU端是否已执行完处理当前帧资源的所有命令
 	// 如果没有就令CPU等待,直到GPU完成命令的执行并抵达这个围栏点;
-	if (mCurrentFrameResource->Fence != 0; mFence->GetCompletedValue() < mCurrentFrameResource->Fence)
+	if (mCurrentFrameResource->Fence != 0 && mFence->GetCompletedValue() < mCurrentFrameResource->Fence)
 	{
 		HANDLE eventHandle = CreateEventEx(nullptr, "false", false, EVENT_ALL_ACCESS);
 		mFence->SetEventOnCompletion(mCurrentFrameResource->Fence, eventHandle);
@@ -2619,22 +2620,8 @@ void D3DApplication::BuildShaderAndInputLayout_Instancing()
 
 void D3DApplication::BuildSkullGeometry_Instancing()
 {
-	Assimp::Importer aiImporter;
-	// 读取模型文件
-	const aiScene* pModel = aiImporter.ReadFile("Textures/WusonOBJ.obj", aiProcess_Triangulate | aiProcess_FlipUVs);
 	
-	if (!pModel||pModel->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !pModel->mRootNode)
-	{
-		return;
-	}
-	
-	for (size_t i = 0; i < pModel->mRootNode->mNumMeshes; i++)
-	{
-		aiMesh* mesh = pModel->mMeshes[pModel->mRootNode->mMeshes[i]];
-
-	}
-	
-	std::ifstream fin("Models/car.txt");
+	std::ifstream fin("Models/skull.txt");
 
 	if (!fin)
 	{
@@ -2817,10 +2804,8 @@ void D3DApplication::BuildRenderItems_Instancing()
 	skullRitem->Bounds = skullRitem->Geo->DrawArgs["skull"].Bounds;
 
 	// Generate instance data.
-	const int n = 10;
-	mInstanceCount = n * n * n;
-	skullRitem->Instances.resize(mInstanceCount);
-
+	const int n = 5;
+	skullRitem->Instances.resize(n * n * n);
 
 	float width = 200.0f;
 	float height = 200.0f;
@@ -2865,7 +2850,7 @@ void D3DApplication::BuildFrameResources_Instancing()
 	for (size_t i = 0; i < gNumFrameResource; i++)
 	{
 		mFrameResource.push_back(std::make_unique<FrameResource>(
-			mD3DDevice.Get(), 1, mInstanceCount, (UINT)mMaterials.size()
+			mD3DDevice.Get(), 1, (UINT)mAllRitems.size(), (UINT)mMaterials.size()
 			));
 	}
 }
@@ -3014,7 +2999,7 @@ void D3DApplication::Update_Instancing(const GameTimer& gt)
 
 	// GPU端是否已执行完处理当前帧资源的所有命令
 	// 如果没有就令CPU等待,直到GPU完成命令的执行并抵达这个围栏点;
-	if (mCurrentFrameResource->Fence != 0; mFence->GetCompletedValue() < mCurrentFrameResource->Fence)
+	if (mCurrentFrameResource->Fence != 0 && mFence->GetCompletedValue() < mCurrentFrameResource->Fence)
 	{
 		HANDLE eventHandle = CreateEventEx(nullptr, "false", false, EVENT_ALL_ACCESS);
 		mFence->SetEventOnCompletion(mCurrentFrameResource->Fence, eventHandle);
@@ -3334,14 +3319,14 @@ void D3DApplication::CreateSwapChain()
 	// bufferDesc 这个结构体描述了带创建后台缓冲区的属性。
 	sd.BufferDesc.Width = mClientWidth; // 缓冲区分辨率的宽度
 	sd.BufferDesc.Height = mClientHeight; //缓冲区分辨率的高度
-	sd.BufferDesc.RefreshRate.Numerator = 60; // 刷新频率
-	sd.BufferDesc.RefreshRate.Denominator = 1;
+	sd.BufferDesc.RefreshRate.Numerator = 0; // 刷新频率
+	sd.BufferDesc.RefreshRate.Denominator = 0;
 	sd.BufferDesc.Format = mBackBufferFormat; // 缓冲区的显示格式
 	sd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED; // 逐行扫描 vs 隔行扫描
 	sd.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED; // 图像如何相对于屏幕进行拉伸
 	// SampleDesc 多重采样的质量级别以及对每个像素的采样次数。
-	sd.SampleDesc.Count = b4xMassState ? 4 : 1; 
-	sd.SampleDesc.Quality = b4xMassState ? (m4xMsaaQulity - 1) : 0;
+	sd.SampleDesc.Count = 1; 
+	sd.SampleDesc.Quality = 0;
 	sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; // 由于我们要将数据渲染至后台缓冲区，因此指定为DXGI_USAGE_RENDER_TARGET_OUTPUT
 	sd.BufferCount = SwapChainBufferCount;//交换链中所用缓冲区数量。
 	sd.OutputWindow = mHWND;// 渲染窗口的句柄
