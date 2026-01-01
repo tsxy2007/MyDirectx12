@@ -10,6 +10,7 @@
 #include "FrameResource.h"
 #include "GameTimer.h"
 #include "Camera.h"
+#include <cstdio>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;

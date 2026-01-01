@@ -3321,10 +3321,15 @@ void D3DApplication::CreateCommandObjects()
 		D3D12_COMMAND_LIST_TYPE_DIRECT,
 		mD3DCommandAllocator.Get(),
 		nullptr,
-		IID_PPV_ARGS(mD3DCommandList.GetAddressOf())
+		IID_PPV_ARGS(&mD3DCommandList)
 	);
 
-	mD3DCommandList->Close();
+	auto Error = mD3DCommandList->Close();
+
+	if (Error)
+	{
+		printf("error! = %d", Error);
+	}
 }
 
 void D3DApplication::CreateSwapChain()
