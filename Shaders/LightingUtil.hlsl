@@ -27,7 +27,7 @@ float CalcAttenuation(float d, float falloffstart, float falloffend)
 // 代替菲涅尔方程的石里克近似
 float3 SchlickFresnel(float3 R0, float3 normal, float3 lightVec)
 {
-float cosIncidentAngle = saturate(dot(normal, lightVec));
+	float cosIncidentAngle = saturate(dot(normal, lightVec));
 
     float f0 = 1.0f - cosIncidentAngle;
     float3 reflectPercent = R0 + (1.0f - R0)*(f0*f0*f0*f0*f0);
